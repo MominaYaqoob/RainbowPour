@@ -1,0 +1,45 @@
+Rainbow Pour: Water Sort - UI demo build (by Gamezium Studio)
+Platform: Android (Flutter). This is a UI-only demo: the screens, animations and
+navigation work, but the actual game rules (pouring, winning) are not built yet.
+
+SCREENS BUILT (21)
+ 1. Splash 1        - "Gamezium Studio" name on a dark screen, fades in and out.
+ 2. Splash 2        - Game title, a bottle that keeps filling, loading bar.
+ 3. Agree screen    - Privacy / Terms notice and "Agree and continue".
+ 4. Onboarding      - 5 animated pages: Tap a bottle, Pour matching colors, Fill every
+                      bottle, Helpers (Undo / Hint / +Bottle), Daily rewards and streaks.
+ 5. Welcome gift    - 100 gems reward with a claim animation.
+ 6. Nickname        - Choose a nickname (with random button) and one of 8 avatars.
+ 7. Home            - Profile, gem balance, Play button, Daily, Challenge, Levels and Shop buttons, settings.
+ 8. Game screen     - Sample board with 8 bottles, Undo / Hint / +Bottle buttons.
+ 9. Pause popup     - Resume, Restart, Home.
+10. Level complete  - 3 stars, confetti, gem reward, Next level, 2x gems (ad).
+11. Level failed    - "No moves left": Undo, extra bottle, Restart, watch ad.
+12. Daily reward    - 7-day reward calendar with streak and claim button.
+13. Settings        - Sound, Music, Vibration, Colorblind mode, language, privacy, terms.
+14. Shop            - Gem packs and Remove Ads, bottle SHAPES (cone, flask, tube, potion,
+                      jar, diamond) and backgrounds. The equipped shape shows on Home and Game.
+15. Profile         - Avatar, nickname (editable), stats cards, avatar picker.
+16. Score & Stats   - Total stars, levels done, streak, gems earned, recent levels.
+17. Level map       - Winding path with finished, current and locked levels.
+18. Not enough gems - Popup with a progress bar, Get Gems and watch-an-ad option.
+19. Rate us         - Popup with 5 selectable stars.
+20. Leave game      - Popup shown when Back is pressed on Home.
+21. Daily challenge - Today's puzzle card, weekly bonus and a month calendar with ticks.
+
+HOW TO SEE THE POPUPS (demo only)
+ - Level complete: tap the "Level 1" pill at the top of the Game screen.
+ - Level failed: tap the "Undo" button at the bottom of the Game screen.
+ - Not enough gems: Shop > Bottles > tap a price (150+ gems; the demo balance is 100).
+ - Rate us: Settings > Rate Rainbow Pour.   Leave game: press Back on Home.
+ - Profile: tap your avatar on Home.   Level map: Levels tile on Home.
+
+NOTE: Profile stats and level-map progress show sample data.
+
+NOT BUILT YET
+ - Real game play (tap, pour, win check), level generator, 8 level backgrounds in play.
+ - Ads, sound, saving progress (gems, levels, settings), real Terms/Privacy links.
+
+INSTALL
+ Copy the APK to the phone, open it and tap Install (allow "Install unknown apps" if asked).
+ WhatsApp blocks .apk files: share through Google Drive, Telegram, e-mail or USB instead.

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rainbow Pour - splash and onboarding preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;background:#0a0e2c;color:#fff;font-family:Outfit,Arial,sans-serif}
+.wrap{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px}
+button{background:#1d2466;color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:10px;padding:8px 14px;font:600 13px Outfit,Arial,sans-serif;cursor:pointer}
+button:hover{background:#2a3390}
+.note{font-size:13px;color:#aab;text-align:center}
+@keyframes shm{0%{left:-40px}40%{left:300px}100%{left:300px}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs id="gd">
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060B33"/><stop offset=".5" stop-color="#1B2680"/><stop offset="1" stop-color="#5646B5"/></linearGradient>
+<linearGradient id="lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A45B0"/><stop offset="1" stop-color="#0A1040"/></linearGradient>
+<linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF27A"/><stop offset="1" stop-color="#FFA000"/></linearGradient>
+<linearGradient id="gz" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="#C9B6FF"/><stop offset="1" stop-color="#7DD3FC"/></linearGradient>
+<linearGradient id="moonG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFF0"/><stop offset=".6" stop-color="#FFF1B8"/><stop offset="1" stop-color="#F6D77A"/></linearGradient>
+<linearGradient id="shm" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="pnl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#141B66"/><stop offset="1" stop-color="#070B2E"/></linearGradient>
+<linearGradient id="edge" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000" stop-opacity=".4"/><stop offset=".26" stop-color="#fff" stop-opacity=".3"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></linearGradient>
+<linearGradient id="wb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9AF5FF"/><stop offset="1" stop-color="#1FA9FF"/></linearGradient>
+<linearGradient id="wh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<clipPath id="cone"><path d="M12 4 V30 L2 96 C1 104 6 110 12 110 H24 C30 110 35 104 34 96 L24 30 V4 Z"/></clipPath>
+<clipPath id="gzc"><text x="120" y="244" text-anchor="middle" font-size="35" font-weight="800" letter-spacing="7" font-family="Outfit,sans-serif">GAMEZIUM</text></clipPath>
+<clipPath id="wc"><rect x="0" y="0" width="208" height="48" rx="24"/></clipPath>
+</defs></svg>
+<div class="wrap">
+<div id="ph" style="position:relative;width:260px;height:520px;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,.2);background:#060B33">
+<svg viewBox="0 0 240 480" width="260" height="520" style="position:absolute;inset:0" id="bgs"></svg>
+<div id="pn" style="position:absolute;inset:0"></div>
+<div id="ch" style="position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s">
+<div style="position:absolute;left:16px;top:14px;display:flex;align-items:center;gap:7px;font:800 15px Outfit,Arial,sans-serif;color:#fff;text-shadow:0 2px 3px rgba(0,0,40,.4)"><svg width="13" height="22" viewBox="-3 -3 42 116"><path d="M12 4 V30 L2 96 C1 104 6 110 12 110 H24 C30 110 35 104 34 96 L24 30 V4 Z" fill="#7FE9FF" stroke="#fff" stroke-width="5"/></svg>Rainbow Pour</div>
+<div id="skip" style="position:absolute;top:12px;right:14px;padding:6px 15px;border-radius:16px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);font:700 12.5px Outfit,Arial,sans-serif;color:#fff;pointer-events:auto;cursor:pointer;transition:opacity .25s">Skip</div>
+<div id="dots" style="position:absolute;left:0;right:0;top:407px;display:flex;justify-content:center;gap:7px"></div>
+<div id="nx" style="position:absolute;left:26px;top:433px;pointer-events:auto;cursor:pointer"><svg width="208" height="58" viewBox="0 0 208 58">
+<rect x="0" y="6" width="208" height="48" rx="24" fill="#0B63B0"/><rect width="208" height="48" rx="24" fill="url(#wb)"/>
+<g clip-path="url(#wc)">
+<path fill="#1696F0" opacity=".55"><animate attributeName="d" dur="2.6s" repeatCount="indefinite" values="M0 30 Q26 22 52 30 T104 30 T156 30 T208 30 V48 H0Z;M0 30 Q26 38 52 30 T104 30 T156 30 T208 30 V48 H0Z;M0 30 Q26 22 52 30 T104 30 T156 30 T208 30 V48 H0Z"/></path>
+<path fill="#7FE6FF" opacity=".5"><animate attributeName="d" dur="3.4s" repeatCount="indefinite" values="M0 35 Q26 41 52 35 T104 35 T156 35 T208 35 V48 H0Z;M0 35 Q26 29 52 35 T104 35 T156 35 T208 35 V48 H0Z;M0 35 Q26 41 52 35 T104 35 T156 35 T208 35 V48 H0Z"/></path>
+<circle cx="38" r="2.6" fill="#fff" opacity=".8"><animate attributeName="cy" values="46;6" dur="2.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.8;0" dur="2.8s" repeatCount="indefinite"/></circle>
+<circle cx="96" r="2" fill="#fff" opacity=".8"><animate attributeName="cy" values="46;8" dur="3.4s" begin=".8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.8;0" dur="3.4s" begin=".8s" repeatCount="indefinite"/></circle>
+<circle cx="158" r="3" fill="#fff" opacity=".8"><animate attributeName="cy" values="46;6" dur="3s" begin="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.8;0" dur="3s" begin="1.6s" repeatCount="indefinite"/></circle>
+<circle cx="188" r="2" fill="#fff" opacity=".8"><animate attributeName="cy" values="46;8" dur="2.4s" begin=".3s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.8;0" dur="2.4s" begin=".3s" repeatCount="indefinite"/></circle>
+<rect x="10" y="3" width="188" height="17" rx="8.5" fill="url(#wh)"/>
+<circle cx="19" cy="14" r="3" fill="#fff" opacity=".9"/>
+<rect y="0" width="30" height="48" fill="url(#shm)" opacity=".7" transform="skewX(-18)"><animate attributeName="x" values="-60;260;260" keyTimes="0;.4;1" dur="3.4s" repeatCount="indefinite"/></rect>
+</g>
+<rect x=".75" y=".75" width="206.5" height="46.5" rx="23.25" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.5"/>
+<text id="bt2" x="104" y="32.5" text-anchor="middle" font-size="18" font-weight="800" fill="#0B4F8F" font-family="Outfit,Arial,sans-serif">Next</text>
+<text id="bt1" x="104" y="31" text-anchor="middle" font-size="18" font-weight="800" fill="#fff" font-family="Outfit,Arial,sans-serif">Next</text>
+</svg></div>
+</div>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button id="rs">Restart flow</button><button id="m0">Slide</button><button id="m1">Fade and zoom</button><button id="m2">Rise up</button></div>
+<div class="note">Splash plays by itself, then tap Next. Buttons above switch the page transition.</div>
+<div class="note" id="err" style="color:#ff8a8a"></div>
+</div>
+<script>
+window.onerror=function(m,s,l,c){document.getElementById('err').textContent='Script error: '+m+' (line '+l+')'};
+const F='font-family="Outfit,Arial,sans-serif"';
+const COL=["#FF3D5A","#FF9F0A","#FFD60A","#2FD071","#18C8F0","#3B7BFF","#A24BFF","#FF5FB0"];
+function mix(h,t,a){const n=x=>parseInt(h.slice(x,x+2),16);const m=v=>Math.round(v+(t-v)*a).toString(16).padStart(2,'0');return '#'+m(n(1))+m(n(3))+m(n(5))}
+let dd='';COL.forEach((c,i)=>dd+='<linearGradient id="lc'+i+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+mix(c,255,.3)+'"/><stop offset="1" stop-color="'+mix(c,0,.1)+'"/></linearGradient>');
+document.getElementById('gd').insertAdjacentHTML('beforeend',dd);
+const D="M12 4 V30 L2 96 C1 104 6 110 12 110 H24 C30 110 35 104 34 96 L24 30 V4 Z";
+const T=(t,x,y,s,w,fill,an,ls,o)=>'<text x="'+x+'" y="'+y+'" text-anchor="'+(an||'middle')+'" font-size="'+s+'" font-weight="'+w+'" fill="'+fill+'" '+(o?'opacity="'+o+'" ':'')+F+(ls?' letter-spacing="'+ls+'"':'')+'>'+t+'</text>';
+const TS=(t,x,y,s,fill)=>T(t,x,y+3,s,800,'#120F52')+T(t,x,y,s,800,fill||'#fff');
+let mid=0;
+function moon(x,y,r){const id='mc'+(++mid);
+const cp='M'+x+' '+(y-r)+' A'+r+' '+r+' 0 0 1 '+x+' '+(y+r)+' A'+(r*.6)+' '+r+' 0 0 0 '+x+' '+(y-r)+'Z';
+return '<defs><clipPath id="'+id+'"><path d="'+cp+'"/></clipPath></defs>'
++'<circle cx="'+x+'" cy="'+y+'" r="'+(r+26)+'" fill="#FFF3C4" opacity=".04"/><circle cx="'+x+'" cy="'+y+'" r="'+(r+14)+'" fill="#FFF3C4" opacity=".05"/><circle cx="'+x+'" cy="'+y+'" r="'+(r+8)+'" fill="none" stroke="#FFF3C4" stroke-opacity=".14"/>'
++'<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="#fff" fill-opacity=".05" stroke="#fff" stroke-opacity=".13" stroke-width="1"/>'
++'<g transform="rotate(-20 '+x+' '+y+') translate('+(2*x)+',0) scale(-1,1)"><path d="'+cp+'" fill="url(#moonG)"/>'
++'<g clip-path="url(#'+id+')" fill="#D9C277" opacity=".65"><circle cx="'+(x+r*.5)+'" cy="'+(y-r*.35)+'" r="'+(r*.13)+'"/><circle cx="'+(x+r*.3)+'" cy="'+(y+r*.3)+'" r="'+(r*.09)+'"/><circle cx="'+(x+r*.62)+'" cy="'+(y+r*.15)+'" r="'+(r*.07)+'"/><circle cx="'+(x+r*.4)+'" cy="'+(y-r*.72)+'" r="'+(r*.06)+'"/></g></g>'
++'<path d="M'+(x+r+16)+' '+(y-r-4)+' l1.6 4.4 4.4 1.6 -4.4 1.6 -1.6 4.4 -1.6 -4.4 -4.4 -1.6 4.4 -1.6z" fill="#fff"><animate attributeName="opacity" values=".2;1;.2" dur="2.6s" repeatCount="indefinite"/></path>'}
+const wl=(y,a,n)=>{let s='M-40 '+y;for(let i=0;i<n;i++)s+=' q10 '+(i%2?a:-a)+' 20 0';return s};
+let bg='<rect width="240" height="480" fill="url(#sky)"/>';
+[[24,150],[100,40],[160,150],[30,236],[215,266],[110,226],[18,336],[225,356],[205,60],[140,96],[200,130],[85,120]].forEach((p,i)=>bg+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="'+(.9+i%3*.5)+'" fill="#fff" opacity=".8"><animate attributeName="opacity" values=".2;.9;.2" dur="'+(2+i*.4)+'s" repeatCount="indefinite"/></circle>');
+[[190,100],[170,210],[24,200]].forEach((p,i)=>bg+='<path d="M'+p[0]+' '+(p[1]-6)+' L'+(p[0]+1.5)+' '+(p[1]-1.5)+' L'+(p[0]+6)+' '+p[1]+' L'+(p[0]+1.5)+' '+(p[1]+1.5)+' L'+p[0]+' '+(p[1]+6)+' L'+(p[0]-1.5)+' '+(p[1]+1.5)+' L'+(p[0]-6)+' '+p[1]+' L'+(p[0]-1.5)+' '+(p[1]-1.5)+'Z" fill="#fff" opacity=".7"><animate attributeName="opacity" values=".1;.9;.1" dur="'+(3+i)+'s" repeatCount="indefinite"/></path>');
+bg+=moon(40,50,19);
+bg+='<polygon points="0,398 36,356 70,384 120,334 172,380 214,350 240,372 240,400 0,400" fill="#36359A" opacity=".75"/><polygon points="0,400 44,376 96,398 160,364 240,394 240,400 0,400" fill="#2A2A86"/>';
+bg+='<rect y="398" width="240" height="82" fill="url(#lake)"/>';
+[[412,3,3.2,.35],[430,4,4.4,.28],[452,4,5.6,.22]].forEach(w=>bg+='<g><path d="'+wl(w[0],w[1],16)+'" fill="none" stroke="#A9AEFF" stroke-width="1.4" opacity="'+w[3]+'"><animateTransform attributeName="transform" type="translate" values="0 0;-40 0" dur="'+w[2]+'s" repeatCount="indefinite"/></path></g>');
+[[404,12,.5],[414,18,.4],[426,22,.35],[440,16,.3]].forEach((r,i)=>bg+='<rect x="'+(40-r[1]/2)+'" y="'+r[0]+'" width="'+r[1]+'" height="2.2" rx="1.1" fill="#FFF3C4" opacity="'+r[2]+'"><animate attributeName="width" values="'+r[1]+';'+(r[1]-6)+';'+r[1]+'" dur="'+(2+i*.5)+'s" repeatCount="indefinite"/></rect>');
+document.getElementById('bgs').innerHTML=bg;
+function bottle(x,y,sc,seg,o){o=o||{};
+let g='<g transform="translate('+x+','+y+') scale('+sc+')"><ellipse cx="18" cy="113" rx="'+(o.lift?11:16)+'" ry="3.5" fill="#000" opacity=".32"/>'+(o.rot||'<g>')+'<g clip-path="url(#cone)"><rect width="36" height="110" fill="#fff" opacity=".14"/>';
+seg.forEach((c,i)=>{g+='<rect y="'+(110-18*(i+1))+'" width="36" height="'+(i?18.6:19)+'" fill="url(#lc'+c+')"/>'+(i?'<rect y="'+(110-18*i-.5)+'" width="36" height="1" fill="#fff" opacity=".3"/>':'')});
+g+=(o.extra||'')+(seg.length?'<ellipse cx="18" cy="'+(110-18*seg.length)+'" rx="20" ry="3" fill="#fff" opacity=".45"/>':'')+'<rect width="36" height="110" fill="url(#edge)"/></g><path d="'+D+'" fill="none" stroke="#fff" stroke-width="2"/><path d="M8 58 V92" stroke="#fff" stroke-opacity=".9" stroke-width="2.6" stroke-linecap="round"/><path d="M16 9 V24" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".9"/><path d="M29 66 V82" stroke="#fff" stroke-opacity=".3" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="18" cy="4" rx="6.8" ry="2.5" fill="#fff" fill-opacity=".3" stroke="#fff" stroke-width="1.7"/></g></g>';return g}
+const gem=(x,y,s)=>'<g transform="translate('+x+','+y+') scale('+s+')"><polygon points="-9,-3 -5,-10 5,-10 9,-3 0,11" fill="#19D3F5" stroke="#fff" stroke-width="1.2"/><polygon points="-9,-3 -5,-10 5,-10 9,-3" fill="#fff" opacity=".5"/><path d="M-3 -3 L0 11 M3 -3 L0 11" stroke="#fff" stroke-width=".8" opacity=".7"/></g>';
+const shelf=(x,y,w)=>'<rect x="'+x+'" y="'+(y+3)+'" width="'+w+'" height="8" rx="4" fill="#000" opacity=".3"/><rect x="'+x+'" y="'+y+'" width="'+w+'" height="8" rx="4" fill="#fff" opacity=".78"/><rect x="'+(x+6)+'" y="'+(y+1)+'" width="'+(w-12)+'" height="2" rx="1" fill="#fff"/>';
+const lift='<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -14;0 -14;0 0;0 0" keyTimes="0;.3;.7;.85;1" dur="2.4s" repeatCount="indefinite"/>';
+const star='M0 -12 l3.5 8 9 1 -7 5 2 9 -7.5 -4.5 -7.5 4.5 2 -9 -7 -5 9 -1z';
+const panel='<rect x="12" y="188" width="216" height="172" rx="22" fill="#000" opacity=".3"/><rect x="12" y="182" width="216" height="176" rx="22" fill="url(#pnl)" stroke="#fff" stroke-opacity=".16" stroke-width="1.2"/><path d="M34 183 H206" stroke="#fff" stroke-opacity=".35" stroke-width="1.2"/>';
+const head=(k,a,b,c,d)=>T(k,120,68,11,700,'#FFD43B',null,3)+TS(a,120,96,22)+TS(b,120,128,33,'url(#gt)')+T(c,120,152,12.5,500,'#fff',null,0,.88)+T(d,120,168,12.5,500,'#fff',null,0,.88);
+const svg=c=>'<svg viewBox="0 0 240 480" width="260" height="520" style="display:block">'+c+'</svg>';
+function wheel(){let s='<g transform="translate(120,276)"><g><animateTransform attributeName="transform" type="rotate" values="0;1080" keyTimes="0;1" calcMode="spline" keySplines=".1 .6 .2 1" dur="4.5s" repeatCount="indefinite"/>';const lab=["10","20","50","Hint","30","100","+B","20"];
+for(let i=0;i<8;i++){const a0=(i*45-112.5)*Math.PI/180,a1=((i+1)*45-112.5)*Math.PI/180,r=64;s+='<path d="M0 0 L'+(r*Math.cos(a0)).toFixed(1)+' '+(r*Math.sin(a0)).toFixed(1)+' A'+r+' '+r+' 0 0 1 '+(r*Math.cos(a1)).toFixed(1)+' '+(r*Math.sin(a1)).toFixed(1)+'Z" fill="url(#lc'+i+')" stroke="#fff" stroke-width="1.8"/>';const m=(i*45-90)*Math.PI/180;s+='<text transform="translate('+(43*Math.cos(m)).toFixed(1)+','+(43*Math.sin(m)+4).toFixed(1)+') rotate('+(i*45)+')" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" '+F+'>'+lab[i]+'</text>'}
+return s+'</g><circle r="12" fill="#FFD43B" stroke="#fff" stroke-width="2.2"/></g><path d="M120 214 L111 197 L129 197Z" fill="#FFD43B" stroke="#fff" stroke-width="1.8"/>'}
+const wk=()=>{let s='';['M','T','W','T','F','S','S'].forEach((d,i)=>{const x=34+i*28.7,done=i<5;s+='<circle cx="'+x+'" cy="284" r="11" fill="'+(done?'#FFD43B':'#fff')+'" fill-opacity="'+(done?1:.1)+'" stroke="#fff" stroke-width="1.4" stroke-opacity="'+(done?1:.4)+'">'+(i===5?'<animate attributeName="stroke-opacity" values=".3;1;.3" dur="1.2s" repeatCount="indefinite"/>':'')+'</circle>'+(done?'<path d="M'+(x-5)+' 284 l3 3 7 -7" stroke="#4A2A00" stroke-width="2.2" fill="none" opacity="0"><animate attributeName="opacity" values="0;1;1" keyTimes="0;.1;1" dur="0.3s" begin="'+(i*.25)+'s" fill="freeze"/></path>':'')+T(d,x,309,10.5,700,'#fff',null,0,.7)});return s};
+const flame='<g transform="translate(52,226)"><g><animateTransform attributeName="transform" type="scale" values="1 1;1.07 .95;.95 1.06;1 1" dur="1s" repeatCount="indefinite"/><path d="M0 -24 C8 -12 18 -6 18 6 C18 18 10 25 0 25 C-10 25 -18 18 -18 6 C-18 -2 -12 -7 -7 -15 C-5 -8 -2 -7 0 -24Z" fill="#FF7A1C" stroke="#fff" stroke-width="1.8"/><path d="M0 -3 C5 4 10 8 10 14 C10 21 5 25 0 25 C-5 25 -10 21 -10 14 C-10 8 -4 4 0 -3Z" fill="#FFD60A"/></g></g>';
+const K='keyTimes="0;.05;.93;1"';
+function pour(){
+const sx=52,sy=170,sc=.85,K2='keyTimes="0;.25;.7;.85;1"',DUR='dur="4.2s" repeatCount="indefinite"';
+const rot=(a,b)=>'<animateTransform attributeName="transform" type="rotate" values="'+a+' 18 55;'+b+' 18 55;'+b+' 18 55;'+a+' 18 55;'+a+' 18 55" '+K2+' '+DUR+'/>';
+let s='<g><animate attributeName="opacity" values="0;1;1;0" '+K+' '+DUR+'/>';
+s+='<g transform="translate('+sx+','+sy+') scale('+sc+')"><ellipse cx="18" cy="113" rx="16" ry="3.5" fill="#000" opacity=".25"/><g>'+rot(0,115)+'<g clip-path="url(#cone)"><rect width="36" height="110" fill="#fff" opacity=".14"/><g>'+rot(0,-115)+'<rect y="92" width="36" height="19" fill="url(#lc1)"/><rect y="74" width="36" height="18.6" fill="url(#lc4)"/><rect y="56" width="36" height="18" fill="url(#lc0)"><animate attributeName="y" values="56;56;76;76;56" keyTimes="0;.3;.7;.85;1" '+DUR+'/><animate attributeName="height" values="18;18;0;0;18" keyTimes="0;.3;.7;.85;1" '+DUR+'/></rect></g><rect width="36" height="110" fill="url(#edge)"/></g><path d="'+D+'" fill="none" stroke="#fff" stroke-width="2"/><path d="M8 58 V92" stroke="#fff" stroke-opacity=".9" stroke-width="2.6" stroke-linecap="round"/><path d="M16 9 V24" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".9"/><ellipse cx="18" cy="4" rx="6.8" ry="2.5" fill="#fff" fill-opacity=".3" stroke="#fff" stroke-width="1.7"/></g></g>';
+const nx=sx+54.6,ny=sy+65.1,tx=nx+22;
+const pd='M'+nx+' '+(ny+3)+' C'+(nx+12)+' '+(ny+4)+' '+tx+' '+(ny+14)+' '+tx+' '+(ny+38)+' L'+tx+' 311';
+s+='<path pathLength="100" d="'+pd+'" fill="none" stroke="'+COL[0]+'" stroke-width="4.2" stroke-linecap="round" stroke-dasharray="100 100"><animate attributeName="stroke-dashoffset" values="100;100;0;0;-100;-100" keyTimes="0;.27;.37;.68;.78;1" '+DUR+'/></path><path pathLength="100" d="'+pd+'" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.3" stroke-linecap="round" stroke-dasharray="5 9" opacity="0"><animate attributeName="stroke-dashoffset" values="0;-28" dur=".5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.37;.4;.68;.72;1" '+DUR+'/></path>';
+s+='<g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.37;.42;.7;.75;1" '+DUR+'/><ellipse cx="'+tx+'" cy="305" rx="4" ry="1.4" fill="none" stroke="#fff" stroke-opacity=".8"><animate attributeName="rx" values="4;16" dur=".9s" repeatCount="indefinite"/><animate attributeName="opacity" values=".9;0" dur=".9s" repeatCount="indefinite"/></ellipse>'+[[-7,0],[6,.25],[-2,.5]].map(d=>'<circle cx="'+(tx+d[0])+'" cy="304" r="1.7" fill="'+COL[0]+'"><animate attributeName="cy" values="304;292;304" dur=".7s" begin="'+d[1]+'s" repeatCount="indefinite"/><animate attributeName="cx" values="'+(tx+d[0])+';'+(tx+d[0]*2)+'" dur=".7s" begin="'+d[1]+'s" repeatCount="indefinite"/></circle>').join('')+'</g>';
+const w1='M-2 74 Q4 71 10 74 T22 74 T34 74 T46 74 V80 H-2Z',w2='M-2 74 Q4 77 10 74 T22 74 T34 74 T46 74 V80 H-2Z';
+s+=bottle(tx-15.3,250,.85,[0],{extra:'<g><animateTransform attributeName="transform" type="translate" values="0 19;0 19;0 0;0 0;0 19" keyTimes="0;.38;.72;.85;1" '+DUR+'/><rect y="76" width="36" height="20" fill="url(#lc0)"/><path d="'+w1+'" fill="url(#lc0)"><animate attributeName="d" values="'+w1+';'+w2+';'+w1+'" dur=".8s" repeatCount="indefinite"/></path></g>'});
+return s+'</g>'}
+const builders=[
+()=>'<svg viewBox="0 0 240 480" width="260" height="520" style="display:block"><rect width="240" height="480" fill="#050922"/>'+T('Gamezium Studio',120,246,19,600,'#fff',null,1.2)+'</svg>',
+()=>svg(TS('Rainbow Pour',120,132,32)+T('WATER SORT',120,158,12.5,700,'#BFC4FF',null,5)+bottle(76,176,2.0,[1,4,3],{extra:'<rect x="0" width="36" fill="url(#lc0)"><animate attributeName="y" values="56;38;38;56" keyTimes="0;.5;.8;1" dur="4s" repeatCount="indefinite"/><animate attributeName="height" values="0;18;18;0" keyTimes="0;.5;.8;1" dur="4s" repeatCount="indefinite"/></rect>'})+'<rect x="50" y="452" width="140" height="7" rx="3.5" fill="#fff" opacity=".25"/><rect x="50" y="452" width="0" height="7" rx="3.5" fill="#7FE9FF"><animate attributeName="width" values="0;140;140" keyTimes="0;.8;1" dur="3s" repeatCount="indefinite"/></rect>'+T('Loading',120,474,11,500,'#fff',null,0,.7)),
+()=>svg(head('STEP 1 OF 6','Tap & Lift','A Bottle','Tap any bottle to lift its top color.','Tap again to put it back.')+panel+bottle(36,216,1.0,[0,1,2,3])+bottle(102,216,1.0,[4,5,4,5],{rot:lift})+bottle(168,216,1.0,[2,6,0,6])+'<circle cx="120" cy="300" r="10" fill="#fff" opacity=".7"><animate attributeName="r" values="8;24;8" dur="2.4s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0;.8" dur="2.4s" repeatCount="indefinite"/></circle><circle cx="120" cy="300" r="8" fill="#fff"/>'+shelf(24,332,192)),
+()=>svg(head('STEP 2 OF 6','Pour Matching','Colors','Pour onto the same color or an empty','bottle until it is full.')+panel+pour()+shelf(24,346,192)),
+()=>svg(head('STEP 3 OF 6','Fill Every','Bottle!','Sort until every bottle holds one color.','Earn stars and gems for each win.')+panel+bottle(36,230,.92,[0,0,0,0])+bottle(102,230,.92,[3,3,3,3])+bottle(168,230,.92,[5,5,5,5])+[[56,214,0],[120,202,.25],[184,214,.5]].map(s=>'<g transform="translate('+s[0]+','+s[1]+')"><g><animateTransform attributeName="transform" type="scale" values="0;1.3;1;1;1" keyTimes="0;.2;.3;.9;1" dur="2.6s" begin="'+s[2]+'s" repeatCount="indefinite"/><path d="'+star+'" fill="#FFD43B" stroke="#fff" stroke-width="1.4"/></g></g>').join('')+shelf(24,336,192)),
+()=>svg(head('STEP 4 OF 6','Stuck? Use','Helpers','Undo a move, get a hint or add a bottle.','Watch an ad to get them for free.')+panel+[[52,'↶','Undo',''],[120,'?','Hint','25'],[188,'+','+ Bottle','40']].map((b,i)=>'<g transform="translate('+b[0]+',274)"><g><animateTransform attributeName="transform" type="translate" values="0 0;0 -12;0 0;0 0" keyTimes="0;.3;.6;1" dur="2s" begin="'+(i*.3)+'s" repeatCount="indefinite"/><circle r="26" cy="5" fill="#000" opacity=".3"/><circle r="26" fill="#1B3FB0" stroke="#fff" stroke-width="2.2"/><circle r="26" fill="url(#wh)" opacity=".35"/><ellipse cy="-12" rx="15" ry="6.5" fill="#fff" opacity=".28"/>'+T(b[1],0,8,23,700,'#fff')+(b[3]?'<g transform="translate(19,-24)"><rect x="-14" y="-8" width="28" height="16" rx="8" fill="#FFD43B"/>'+gem(-7,0,.6)+T(b[3],5,4,9.5,800,'#4A2A00')+'</g>':'')+'</g>'+T(b[2],0,54,12,700,'#fff')+'</g>').join('')),
+()=>svg(head('STEP 5 OF 6','Daily Rewards','& Streaks','Claim gems every day and keep your','streak alive for bigger prizes.')+panel+flame+T('5-day streak',80,222,17,800,'#fff','start')+T('Keep it going!',80,239,11.5,600,'#fff','start',0,.75)+wk()+'<rect x="48" y="326" width="144" height="26" rx="13" fill="#FFD43B"/>'+gem(68,339,.85)+T('Today: +40 gems',132,344,12.5,800,'#4A2A00')),
+()=>svg(head('STEP 6 OF 6','Spin & Win','Every Day','Spin the wheel once a day for gems,','hints and extra bottles.')+panel+wheel())
+];
+const errs=[];
+const pv=builders.map((b,i)=>{try{return b()}catch(e){errs.push('page '+(i+1)+': '+e.message);return '<div style="color:#fff;padding:20px">page '+(i+1)+' failed</div>'}});
+if(errs.length)document.getElementById('err').textContent=errs.join(' | ');
+const pn=document.getElementById('pn');pn.innerHTML=pv.map((s,i)=>'<div style="position:absolute;inset:0;display:'+(i?'none':'block')+'">'+s+'</div>').join('');
+const pg=[...pn.children],N=pg.length;let cur=0,mode=null,tk=0,tm=[];
+function ui(){const o=cur>=2,L=cur===N-1;document.getElementById('ch').style.opacity=o?1:0;document.getElementById('skip').style.opacity=L?0:1;document.getElementById('dots').innerHTML=Array.from({length:N-2},(_,i)=>'<span style="width:'+(i===cur-2?30:9)+'px;height:9px;border-radius:5px;background:'+(i===cur-2?'#FFE680':'rgba(255,255,255,.38)')+';box-shadow:'+(i===cur-2?'0 0 10px rgba(255,210,77,.55)':'none')+';transition:all .3s"></span>').join('');const t=L?"Let's Play!  ▶":'Next  ›';document.getElementById('bt1').textContent=t;document.getElementById('bt2').textContent=t}
+function go(n){if(n===cur)return;const o=pg[cur],i=pg[n],my=++tk;pg.forEach(p=>p.getAnimations().forEach(a=>a.cancel()));pg.forEach((p,k)=>{if(k!==cur&&k!==n)p.style.display='none'});i.style.display='block';
+const m=mode!==null?mode:(n<=2?1:0);const f={duration:520,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'};
+const A=[[[{transform:'translateX(0)'},{transform:'translateX(-100%)'}],[{transform:'translateX(100%)'},{transform:'translateX(0)'}]],
+[[{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.88)'}],[{opacity:0,transform:'scale(1.15)'},{opacity:1,transform:'scale(1)'}]],
+[[{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(-50px)'}],[{opacity:0,transform:'translateY(70px)'},{opacity:1,transform:'translateY(0)'}]]][m];
+const ao=o.animate(A[0],f);i.animate(A[1],f);cur=n;ui();ao.onfinish=()=>{if(my===tk)pg.forEach((p,k)=>{if(k!==cur)p.style.display='none';p.getAnimations().forEach(a=>a.cancel())})}}
+function clr(){tm.forEach(clearTimeout);tm=[]}
+function start(){clr();go(0);tm.push(setTimeout(()=>{if(cur===0)go(1)},2600));tm.push(setTimeout(()=>{if(cur===1)go(2)},6000))}
+document.getElementById('nx').onclick=()=>{clr();go(cur===N-1?2:cur+1)};
+document.getElementById('skip').onclick=()=>{clr();go(N-1)};
+document.getElementById('ph').addEventListener('click',e=>{if(cur<2&&!e.target.closest('#ch')){clr();go(cur+1)}});
+document.getElementById('rs').onclick=start;
+['m0','m1','m2'].forEach((id,k)=>document.getElementById(id).onclick=()=>{clr();mode=k;go(cur<2?2:(cur===N-1?2:cur+1))});
+ui();start();
+</script>
+</body>
+</html>
