@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
+import '../../core/haptics.dart';
 import '../../widgets/bottle_shape.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
@@ -14,12 +15,18 @@ import '../../widgets/gem_pill.dart';
 import '../../widgets/night_background.dart';
 import '../../widgets/water_button.dart';
 import 'level_complete_dialog.dart';
+import '../../widgets/background_theme.dart';
+import '../shop/not_enough_gems_dialog.dart';
 import 'level_failed_dialog.dart';
+import 'sample_board.dart';
 
 /// Game screen, UI only: a sample board, the top bar, the three helper
 /// buttons, a pause popup and the reserved banner-ad slot. No game rules yet.
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  const GameScreen({super.key, this.level});
+
+  /// Null = the player's current level.
+  final int? level;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -36,20 +43,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   )..repeat();
 
   // sample board: layers bottom to top as color ids
-  static const _board = <List<int>>[
-    [0, 1, 2, 3],
-    [4, 5, 4, 5],
-    [2, 6, 0, 6],
-    [7, 3, 7, 3],
-    [1, 5, 1],
-    [5, 4, 3],
-    [],
-    [],
-  ];
+  late SampleBoard _sample = SampleBoard.forLevel(widget.level ?? 1);
+  List<List<int>> get _board => _sample.bottles;
   static const _selected = 1;
 
   int _gems = 0;
-  int _level = 1;
+  late int _level = widget.level ?? 1;
+
+  /// Short "preparing" overlay shown while a level loads.
+  bool _loading = true;
+
+  /// Hint: bottle to pour from and into (glow), -1 = none.
+  int _hintFrom = -1;
+  int _hintTo = -1;
 
   /// 0.78..1: shrinks the bottom buttons on short screens.
   double _f = 1;
@@ -58,16 +64,89 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _load();
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _loading = false);
+    });
   }
 
   Future<void> _load() async {
     final gems = await AppPrefs.gems();
-    final level = await AppPrefs.level();
+    final level = widget.level ?? await AppPrefs.level();
     if (!mounted) return;
     setState(() {
       _gems = gems;
       _level = level;
+      _sample = SampleBoard.forLevel(level);
     });
+  }
+
+  /// Moves on to the next level and keeps the furthest level saved.
+  Future<void> _next() async {
+    Haptics.light();
+    final next = _level + 1;
+    setState(() {
+      _loading = true;
+      _hintFrom = _hintTo = -1;
+    });
+    if (next > await AppPrefs.level()) await AppPrefs.setLevel(next);
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    setState(() {
+      _level = next;
+      _sample = SampleBoard.forLevel(next);
+      _loading = false;
+    });
+  }
+
+  /// Puts the level back to its starting board.
+  Future<void> _restart() async {
+    Haptics.light();
+    setState(() {
+      _loading = true;
+      _hintFrom = _hintTo = -1;
+    });
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    setState(() {
+      _sample = SampleBoard.forLevel(_level);
+      _loading = false;
+    });
+  }
+
+  /// Demo hint: finds a loading overlay, then glows two bottles for 2 seconds.
+  Future<void> _hint() async {
+    Haptics.tap();
+    const cost = 25;
+    if (_gems < cost) {
+      NotEnoughGemsDialog.show(
+        context,
+        need: cost,
+        have: _gems,
+        onGetGems: () {
+          Navigator.of(context).pop();
+          _soon('The shop');
+        },
+        onWatchAd: () {
+          Navigator.of(context).pop();
+          _soon('Rewarded ads');
+        },
+      );
+      return;
+    }
+    if (!await AppPrefs.spendGems(cost)) return;
+    if (mounted) setState(() => _gems -= cost);
+    setState(() => _loading = true);
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    final from = _board.indexWhere((b) => b.isNotEmpty);
+    final to = _board.lastIndexWhere((b) => b.isEmpty);
+    setState(() {
+      _loading = false;
+      _hintFrom = from;
+      _hintTo = to;
+    });
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _hintFrom = _hintTo = -1);
   }
 
   @override
@@ -98,16 +177,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// Demo trigger: tapping the level pill shows the level-complete popup.
   void _levelComplete() {
+    Haptics.success();
     LevelCompleteDialog.show(
       context,
       level: _level,
       onNext: () {
         Navigator.of(context).pop();
-        _soon('The next level');
+        _next();
       },
       onReplay: () {
         Navigator.of(context).pop();
-        _soon('Replay');
+        _restart();
       },
       onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
     );
@@ -115,6 +195,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// Demo trigger: tapping Undo shows the "no moves left" popup.
   void _levelFailed() {
+    Haptics.fail();
     LevelFailedDialog.show(
       context,
       onUndo: () {
@@ -127,13 +208,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       },
       onRestart: () {
         Navigator.of(context).pop();
-        _soon('Restart');
+        _restart();
       },
       onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
     );
   }
 
   void _pause() {
+    Haptics.tap();
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -200,7 +282,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               children: [
                 _ghost('Restart', Icons.refresh_rounded, () {
                   Navigator.of(context).pop();
-                  _soon('Restart');
+                  _restart();
                 }),
                 const SizedBox(width: 12),
                 _ghost('Home', Icons.home_rounded, () {
@@ -250,32 +332,85 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _f = (MediaQuery.sizeOf(context).height / 760).clamp(0.78, 1.0);
     return Scaffold(
       body: NightBackground(
+        theme: BackgroundSkin.themeFor(_level),
         child: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              Entrance(
-                progress: _in,
-                begin: 0,
-                end: 0.35,
-                rise: -14,
-                child: _topBar(),
+              Column(
+                children: [
+                  Entrance(
+                    progress: _in,
+                    begin: 0,
+                    end: 0.35,
+                    rise: -14,
+                    child: _topBar(),
+                  ),
+                  Expanded(
+                    child: Entrance(
+                      progress: _in,
+                      begin: 0.15,
+                      end: 0.7,
+                      rise: 30,
+                      child: _boardArea(),
+                    ),
+                  ),
+                  Entrance(
+                    progress: _in,
+                    begin: 0.5,
+                    end: 0.95,
+                    child: _actionBar(),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
-              Expanded(
-                child: Entrance(
-                  progress: _in,
-                  begin: 0.15,
-                  end: 0.7,
-                  rise: 30,
-                  child: _boardArea(),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_loading,
+                  child: AnimatedOpacity(
+                    opacity: _loading ? 1 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      alignment: Alignment.center,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0A1040).withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Preparing level…',
+                              style: GoogleFonts.outfit(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              Entrance(
-                progress: _in,
-                begin: 0.5,
-                end: 0.95,
-                child: _actionBar(),
-              ),
-              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -341,25 +476,33 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Widget _boardArea() {
     return LayoutBuilder(
       builder: (context, c) {
-        const gap = 14.0;
+        final n = _board.length;
+        // 8 bottles: 2x4, up to 12: two even rows, more: three rows of five
+        final perRow = n <= 8 ? 4 : (n <= 12 ? (n + 1) ~/ 2 : 5);
+        final rows = (n / perRow).ceil();
+        final gap = perRow > 5 ? 8.0 : 14.0;
         const shelf = 16.0;
-        final rowGap = c.maxHeight < 440 ? 14.0 : 26.0;
-        final byWidth = (c.maxWidth - 40 - gap * 3) / 4;
-        // leave breathing room above, between and below the two rows
+        final rowGap = c.maxHeight < 440 || rows > 2 ? 14.0 : 26.0;
+        final byWidth = (c.maxWidth - 40 - gap * (perRow - 1)) / perRow;
+        // leave breathing room above, between and below the rows
         final byHeight =
-            ((c.maxHeight - rowGap - shelf * 2 - 28) / 2) * 0.9 * 36 / 118;
+            ((c.maxHeight - rowGap * (rows - 1) - shelf * rows - 28) / rows) *
+            0.9 *
+            36 /
+            118;
         // keep bottles a sensible size: about 14% of the screen width
         final maxW = (c.maxWidth * 0.145).clamp(36.0, 56.0);
-        final w = math.max(30.0, math.min(math.min(byWidth, byHeight), maxW));
+        final w = math.max(26.0, math.min(math.min(byWidth, byHeight), maxW));
         return Center(
           child: AnimatedBuilder(
             animation: _loop,
             builder: (context, _) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _row(0, w, gap, shelf),
-                SizedBox(height: rowGap),
-                _row(4, w, gap, shelf),
+                for (var r = 0; r < rows; r++) ...[
+                  if (r > 0) SizedBox(height: rowGap),
+                  _row(r * perRow, math.min(n, (r + 1) * perRow), w, gap, shelf),
+                ],
               ],
             ),
           ),
@@ -368,9 +511,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _row(int start, double w, double gap, double shelf) {
+  Widget _row(int start, int end, double w, double gap, double shelf) {
     final h = w * 118 / 36;
-    final rowW = w * 4 + gap * 3;
+    final rowW = w * (end - start) + gap * (end - start - 1);
     return SizedBox(
       width: rowW + 24,
       height: h + shelf,
@@ -400,7 +543,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: [for (var i = start; i < start + 4; i++) _bottle(i, w)],
+              children: [for (var i = start; i < end; i++) _bottle(i, w)],
             ),
           ),
         ],
@@ -431,6 +574,23 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
+          if (i == _hintFrom || i == _hintTo)
+            Positioned(
+              bottom: -4,
+              child: Container(
+                width: w * 1.25,
+                height: w * 118 / 36 + 8,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(w * 0.45),
+                  color: (i == _hintFrom ? AppColors.gold : Colors.white)
+                      .withValues(alpha: 0.22),
+                  border: Border.all(
+                    color: i == _hintFrom ? AppColors.gold : Colors.white,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             bottom: lift + bob,
             child: ConeBottle(
@@ -438,6 +598,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               width: w,
               showShadow: false,
               shape: BottleSkin.shape.value,
+              capacity: _sample.capacity,
             ),
           ),
         ],
@@ -472,7 +633,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _action(Icons.undo_rounded, 'Undo', null, onTap: _levelFailed),
-          _action(Icons.lightbulb_rounded, 'Hint', 25),
+          _action(Icons.lightbulb_rounded, 'Hint', 25, onTap: _hint),
           _action(Icons.add_rounded, '+ Bottle', 40),
         ],
       ),

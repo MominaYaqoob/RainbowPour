@@ -8,6 +8,7 @@ import '../../core/anim.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
 import '../../widgets/avatar_face.dart';
+import '../../widgets/background_theme.dart';
 import '../../widgets/bottle_shape.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
@@ -116,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       },
       child: Scaffold(
         body: NightBackground(
+          theme: BackgroundSkin.themeFor(_level),
           child: SafeArea(
             child: Column(
               children: [

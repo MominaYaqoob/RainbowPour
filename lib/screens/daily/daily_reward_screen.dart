@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_colors.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/gem_icon.dart';
+import '../../widgets/native_ad_placeholder.dart';
 import '../../widgets/page_shell.dart';
 import '../../widgets/water_button.dart';
 
@@ -149,6 +150,13 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
                   ),
                 ),
               ),
+            ),
+            const SizedBox(height: 18),
+            Entrance(
+              progress: _in,
+              begin: 0.8,
+              end: 1,
+              child: NativeAdPlaceholder(width: gridW),
             ),
           ],
         ),

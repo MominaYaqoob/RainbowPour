@@ -4,15 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_colors.dart';
+import '../../widgets/background_theme.dart';
 import '../../widgets/bottle_shape.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/gem_icon.dart';
 import '../../core/app_prefs.dart';
+import '../../widgets/info_dialog.dart';
 import '../../widgets/page_shell.dart';
+import '../../widgets/water_button.dart';
 import 'not_enough_gems_dialog.dart';
 
-/// Shop (UI only): gem packs with Remove Ads, bottle skins and backgrounds.
+/// Shop (UI only): free gems by ad, bottle skins and backgrounds.
 /// Nothing is bought or saved yet; equipping just switches the highlight.
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -31,7 +34,8 @@ class _ShopScreenState extends State<ShopScreen>
   int _tab = 0;
   int _gems = 0;
   int _skin = 0; // equipped bottle skin
-  int _theme = 0; // equipped background
+  Set<String> _owned = {};
+  int _theme = -1; // equipped background: -1 = Auto (follows the level)
 
   static const _tabs = ['Gems', 'Bottles', 'Backgrounds'];
 
@@ -39,44 +43,10 @@ class _ShopScreenState extends State<ShopScreen>
   static const _skins = <(BottleShape, int)>[
     (BottleShape.cone, 0),
     (BottleShape.flask, 0),
-    (BottleShape.tube, 150),
-    (BottleShape.potion, 300),
-    (BottleShape.jar, 500),
-    (BottleShape.diamond, 800),
-  ];
-
-  // (name, gems needed, sky top, sky bottom, accent)
-  static const _themes = <(String, int, Color, Color, Color)>[
-    ('Night Lake', 0, Color(0xFF060B33), Color(0xFF5646B5), Color(0xFFFFF3C4)),
-    (
-      'Sunset Sea',
-      200,
-      Color(0xFFFFD1A9),
-      Color(0xFF8E5BD6),
-      Color(0xFFFFF6E0),
-    ),
-    (
-      'Lavender Peaks',
-      200,
-      Color(0xFFFFE3F1),
-      Color(0xFF9FA8FF),
-      Color(0xFFFFFFFF),
-    ),
-    (
-      'Turquoise Waves',
-      300,
-      Color(0xFFB8F3E8),
-      Color(0xFF0E8FA8),
-      Color(0xFFFFFFFF),
-    ),
-    ('Aurora', 400, Color(0xFF041C32), Color(0xFF0B6E75), Color(0xFF4FFFB0)),
-    (
-      'Golden Dunes',
-      400,
-      Color(0xFFFFF0CF),
-      Color(0xFFF0794A),
-      Color(0xFFFFF8E5),
-    ),
+    (BottleShape.tube, 700),
+    (BottleShape.potion, 1500),
+    (BottleShape.jar, 3000),
+    (BottleShape.diamond, 6000),
   ];
 
   @override
@@ -86,12 +56,21 @@ class _ShopScreenState extends State<ShopScreen>
       0,
       _skins.indexWhere((e) => e.$1 == BottleSkin.shape.value),
     );
+    _theme = BackgroundSkin.mode.value;
+    AppPrefs.owned().then((o) {
+      if (mounted) setState(() => _owned = o);
+    });
+    AppPrefs.adsToday().then((n) {
+      if (mounted) setState(() => _adsToday = n);
+    });
     AppPrefs.gems().then((g) {
       if (mounted) setState(() => _gems = g);
     });
   }
 
-  void _tooExpensive(int cost) {
+  /// Buys [id] for [cost] gems, or shows "not enough gems". [onBought] runs
+  /// after a successful purchase (to equip the item).
+  Future<void> _buy(String id, int cost, VoidCallback onBought) async {
     if (cost > _gems) {
       NotEnoughGemsDialog.show(
         context,
@@ -103,12 +82,20 @@ class _ShopScreenState extends State<ShopScreen>
         },
         onWatchAd: () {
           Navigator.of(context).pop();
-          showSoon(context, 'Rewarded ads');
+          setState(() => _tab = 0);
+          _watchAd();
         },
       );
-    } else {
-      showSoon(context, 'Buying with gems');
+      return;
     }
+    if (!await AppPrefs.spendGems(cost)) return;
+    await AppPrefs.addOwned(id);
+    if (!mounted) return;
+    setState(() {
+      _gems -= cost;
+      _owned = {..._owned, id};
+    });
+    onBought();
   }
 
   @override
@@ -122,6 +109,7 @@ class _ShopScreenState extends State<ShopScreen>
     return PageShell(
       title: 'Shop',
       gemsTappable: false,
+      gems: _gems,
       child: Column(
         children: [
           const SizedBox(height: 12),
@@ -226,40 +214,172 @@ class _ShopScreenState extends State<ShopScreen>
 
   // ----------------------------------------------------------- gems tab
 
-  static const _packs = <(int, String, String?, int)>[
-    (100, '\$0.99', null, 1),
-    (550, '\$4.99', 'POPULAR', 2),
-    (1200, '\$9.99', null, 3),
-    (3000, '\$19.99', 'BEST VALUE', 4),
-  ];
+  static const _adGems = 10;
+  static const _adLimit = 3;
+
+  /// Ads watched today (saved per day).
+  int _adsToday = 0;
+
+  void _watchAd() {
+    if (_adsToday >= _adLimit) {
+      InfoDialog.dailyLimit(context);
+      return;
+    }
+    // demo: pretend the ad finished
+    setState(() {
+      _adsToday++;
+      _gems += _adGems;
+    });
+    AppPrefs.addGems(_adGems);
+    AppPrefs.addAdToday();
+  }
 
   Widget _gemsTab() {
+    final left = _adLimit - _adsToday;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Entrance(progress: _in, begin: 0.1, end: 0.5, child: _removeAds()),
-        const SizedBox(height: 18),
-        _label('GEM PACKS'),
+        _label('FREE GEMS'),
         const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, c) {
-            final w = (c.maxWidth - 12) / 2;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
+        Entrance(
+          progress: _in,
+          begin: 0.1,
+          end: 0.5,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF2E3AB8), Color(0xFF141B66)],
+              ),
+              border: Border.all(color: AppColors.gold, width: 2),
+            ),
+            child: Column(
               children: [
-                for (var i = 0; i < _packs.length; i++)
-                  Entrance(
-                    progress: _in,
-                    begin: 0.2 + i * 0.08,
-                    end: 0.6 + i * 0.08,
-                    child: _pack(_packs[i], w),
+                Row(
+                  children: [
+                    const GemIcon(size: 56),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Watch an ad',
+                            style: GoogleFonts.outfit(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'Get +$_adGems gems each time',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.aqua,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < _adLimit; i++)
+                      Container(
+                        width: 12,
+                        height: 12,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i < _adsToday
+                              ? AppColors.gold
+                              : Colors.white.withValues(alpha: 0.2),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  left > 0
+                      ? '$_adsToday / $_adLimit watched today'
+                      : 'All $_adLimit watched. Come back tomorrow!',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.75),
                   ),
+                ),
+                const SizedBox(height: 14),
+                WaterButton(
+                  width: math.min(MediaQuery.sizeOf(context).width - 64, 320),
+                  label: left > 0 ? 'Watch Ad' : 'Come Back Tomorrow',
+                  icon: left > 0 ? Icons.play_circle_fill_rounded : Icons.schedule_rounded,
+                  dim: left == 0,
+                  onPressed: _watchAd,
+                ),
               ],
-            );
-          },
+            ),
+          ),
         ),
+        const SizedBox(height: 20),
+        _label('OTHER WAYS'),
+        const SizedBox(height: 10),
+        _tip(Icons.card_giftcard_rounded, 'Daily reward', 'Log in every day'),
+        const SizedBox(height: 10),
+        _tip(Icons.emoji_events_rounded, 'Complete levels', 'Earn gems as you win'),
+        const SizedBox(height: 10),
+        _tip(Icons.local_fire_department_rounded, 'Daily challenge', 'Finish it for a big bonus'),
       ],
+    );
+  }
+
+  Widget _tip(IconData icon, String title, String sub) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: 0.08),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.gold, size: 26),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                Text(
+                  sub,
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -275,236 +395,6 @@ class _ShopScreenState extends State<ShopScreen>
       ),
     ),
   );
-
-  Widget _removeAds() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF7B3CF0), Color(0xFF3A1FB0)],
-        ),
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x66000020),
-            blurRadius: 14,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.18),
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: const Icon(
-              Icons.block_rounded,
-              size: 32,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Remove Ads',
-                  style: GoogleFonts.outfit(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  'No banners or popups. Ads you choose to watch for rewards stay.',
-                  style: GoogleFonts.outfit(
-                    fontSize: 11.5,
-                    height: 1.25,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          _priceButton('\$2.99', onTap: () => showSoon(context, 'Purchases')),
-        ],
-      ),
-    );
-  }
-
-  Widget _pack((int, String, String?, int) p, double w) {
-    final (gems, price, tag, size) = p;
-    final hot = tag != null;
-    return SizedBox(
-      width: w,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: w,
-            padding: const EdgeInsets.fromLTRB(10, 22, 10, 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: hot
-                    ? const [Color(0xFF2E3AB8), Color(0xFF141B66)]
-                    : const [Color(0xFF1B2480), Color(0xFF0E1550)],
-              ),
-              border: Border.all(
-                color: hot
-                    ? AppColors.gold
-                    : Colors.white.withValues(alpha: 0.3),
-                width: hot ? 2 : 1.4,
-              ),
-            ),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 62,
-                  width: double.infinity,
-                  child: _pile(size),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '$gems',
-                  style: GoogleFonts.outfit(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  'GEMS',
-                  style: GoogleFonts.outfit(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 3,
-                    color: AppColors.aqua,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _priceButton(
-                  price,
-                  wide: true,
-                  onTap: () => showSoon(context, 'Purchases'),
-                ),
-              ],
-            ),
-          ),
-          if (tag != null)
-            Positioned(
-              top: -8,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: tag == 'BEST VALUE'
-                        ? const Color(0xFFFF3D5A)
-                        : AppColors.gold,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white, width: 1.4),
-                  ),
-                  child: Text(
-                    tag,
-                    style: GoogleFonts.outfit(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                      color: tag == 'BEST VALUE'
-                          ? Colors.white
-                          : const Color(0xFF4A2A00),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// More gems in the pile for bigger packs.
-  Widget _pile(int level) {
-    final big = 34.0 + level * 4;
-    return Stack(
-      alignment: Alignment.bottomCenter,
-      children: [
-        if (level >= 2)
-          Positioned(
-            left: 8,
-            bottom: 0,
-            child: Transform.rotate(
-              angle: -0.3,
-              child: GemIcon(size: big * 0.62),
-            ),
-          ),
-        if (level >= 3)
-          Positioned(
-            right: 8,
-            bottom: 0,
-            child: Transform.rotate(
-              angle: 0.3,
-              child: GemIcon(size: big * 0.62),
-            ),
-          ),
-        if (level >= 4) Positioned(top: -2, child: GemIcon(size: big * 0.5)),
-        GemIcon(size: big),
-      ],
-    );
-  }
-
-  Widget _priceButton(String price, {bool wide = false, VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: wide ? double.infinity : null,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF9AF5FF), Color(0xFF1FA9FF)],
-          ),
-          border: Border.all(color: Colors.white, width: 1.8),
-          boxShadow: const [
-            BoxShadow(color: Color(0xFF0B63B0), offset: Offset(0, 3)),
-          ],
-        ),
-        child: Text(
-          price,
-          textAlign: TextAlign.center,
-          style: GoogleFonts.outfit(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            shadows: const [
-              Shadow(color: Color(0xFF0B4F8F), offset: Offset(0, 1.5)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // --------------------------------------------------------- bottles tab
 
@@ -530,7 +420,8 @@ class _ShopScreenState extends State<ShopScreen>
   Widget _skinCard(int i) {
     final (shape, cost) = _skins[i];
     final name = shape.label;
-    final owned = cost == 0;
+    final id = 'skin:${shape.name}';
+    final owned = cost == 0 || _owned.contains(id);
     final on = _skin == i;
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
@@ -596,12 +487,12 @@ class _ShopScreenState extends State<ShopScreen>
             on: on,
             cost: cost,
             onTap: () {
-              if (owned) {
+              void equip() {
                 setState(() => _skin = i);
                 BottleSkin.equip(shape);
-              } else {
-                _tooExpensive(cost);
               }
+
+              owned ? equip() : _buy(id, cost, equip);
             },
           ),
         ],
@@ -688,6 +579,8 @@ class _ShopScreenState extends State<ShopScreen>
   // ------------------------------------------------------- backgrounds tab
 
   Widget _themesTab() {
+    // card 0 = Auto, then every theme
+    final n = BackgroundTheme.all.length + 1;
     return GridView.count(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
       crossAxisCount: 2,
@@ -695,21 +588,25 @@ class _ShopScreenState extends State<ShopScreen>
       crossAxisSpacing: 12,
       childAspectRatio: 0.82,
       children: [
-        for (var i = 0; i < _themes.length; i++)
+        for (var i = 0; i < n; i++)
           Entrance(
             progress: _in,
-            begin: 0.1 + i * 0.07,
-            end: 0.5 + i * 0.07,
-            child: _themeCard(i),
+            begin: (0.05 + i * 0.06).clamp(0.0, 0.5),
+            end: (0.45 + i * 0.06).clamp(0.2, 1.0),
+            child: _themeCard(i - 1),
           ),
       ],
     );
   }
 
-  Widget _themeCard(int i) {
-    final (name, cost, top, bottom, accent) = _themes[i];
-    final owned = cost == 0;
-    final on = _theme == i;
+  /// [index] -1 is the Auto card, otherwise an index into the theme list.
+  Widget _themeCard(int index) {
+    final auto = index < 0;
+    final theme = auto ? null : BackgroundTheme.all[index];
+    final cost = theme?.price ?? 0;
+    final id = 'bg:$index';
+    final owned = cost == 0 || _owned.contains(id);
+    final on = _theme == index;
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
       decoration: BoxDecoration(
@@ -732,7 +629,33 @@ class _ShopScreenState extends State<ShopScreen>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CustomPaint(painter: _ThemePainter(top, bottom, accent)),
+                  if (auto)
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            for (final t in BackgroundTheme.all) t.sky[1],
+                          ],
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.autorenew_rounded,
+                          size: 38,
+                          color: Colors.white,
+                        ),
+                      ),
+                    )
+                  else
+                    CustomPaint(
+                      painter: _ThemePainter(
+                        theme!.sky.first,
+                        theme.sky.last,
+                        theme.celestialColor,
+                      ),
+                    ),
                   if (!owned)
                     Container(
                       color: Colors.black.withValues(alpha: 0.28),
@@ -750,7 +673,7 @@ class _ShopScreenState extends State<ShopScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            name,
+            auto ? 'Auto' : theme!.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.outfit(
@@ -759,17 +682,28 @@ class _ShopScreenState extends State<ShopScreen>
               color: Colors.white,
             ),
           ),
-          const SizedBox(height: 6),
+          Text(
+            auto ? 'New look every 20 levels' : ' ',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.outfit(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 4),
           _stateButton(
             owned: owned,
             on: on,
             cost: cost,
             onTap: () {
-              if (owned) {
-                setState(() => _theme = i);
-              } else {
-                _tooExpensive(cost);
+              void equip() {
+                setState(() => _theme = index);
+                BackgroundSkin.set(index);
               }
+
+              owned ? equip() : _buy(id, cost, equip);
             },
           ),
         ],

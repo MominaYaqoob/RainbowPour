@@ -28,5 +28,9 @@ abstract final class AppColors {
     Color(0xFF3B7BFF), // blue
     Color(0xFFA24BFF), // purple
     Color(0xFFFF5FB0), // pink
+    Color(0xFFB6E02B), // lime
+    Color(0xFF9A5B33), // brown
+    Color(0xFF0FA08A), // teal
+    Color(0xFF9AA3B8), // grey
   ];
 }

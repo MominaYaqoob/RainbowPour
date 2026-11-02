@@ -2,14 +2,19 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../core/app_colors.dart';
+import 'background_theme.dart';
 
 /// Moonlit night over a lake: sky, twinkling stars, crescent moon on the left,
 /// two mountain layers and animated water with the moon's reflection.
 class NightBackground extends StatefulWidget {
-  const NightBackground({super.key, this.child});
+  const NightBackground({
+    super.key,
+    this.child,
+    this.theme = BackgroundTheme.night,
+  });
 
   final Widget? child;
+  final BackgroundTheme theme;
 
   @override
   State<NightBackground> createState() => _NightBackgroundState();
@@ -34,7 +39,10 @@ class _NightBackgroundState extends State<NightBackground>
       fit: StackFit.expand,
       children: [
         RepaintBoundary(
-          child: CustomPaint(painter: _NightPainter(_c), size: Size.infinite),
+          child: CustomPaint(
+            painter: _NightPainter(_c, widget.theme),
+            size: Size.infinite,
+          ),
         ),
         if (widget.child != null) widget.child!,
       ],
@@ -62,9 +70,10 @@ const _stars = <Offset>[
 const _sparkles = <Offset>[Offset(214, 90), Offset(222, 230), Offset(20, 260)];
 
 class _NightPainter extends CustomPainter {
-  _NightPainter(this.t) : super(repaint: t);
+  _NightPainter(this.t, this.theme) : super(repaint: t);
 
   final Animation<double> t;
+  final BackgroundTheme theme;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -76,17 +85,17 @@ class _NightPainter extends CustomPainter {
     canvas.drawRect(
       Offset.zero & size,
       Paint()
-        ..shader = const LinearGradient(
+        ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.skyTop, AppColors.skyMid, AppColors.skyBottom],
+          colors: theme.sky,
           stops: [0, 0.5, 1],
         ).createShader(Offset.zero & size),
     );
 
     // stars (spread over the whole sky height)
     final star = Paint();
-    for (var i = 0; i < _stars.length; i++) {
+    for (var i = 0; theme.stars && i < _stars.length; i++) {
       final p = Offset(
         _stars[i].dx / 240 * size.width,
         _stars[i].dy / 480 * size.height,
@@ -97,7 +106,7 @@ class _NightPainter extends CustomPainter {
       star.color = Colors.white.withValues(alpha: a);
       canvas.drawCircle(p, (0.9 + (i % 3) * 0.5) * s, star);
     }
-    for (var i = 0; i < _sparkles.length; i++) {
+    for (var i = 0; theme.stars && i < _sparkles.length; i++) {
       final p = Offset(
         _sparkles[i].dx / 240 * size.width,
         _sparkles[i].dy / 480 * size.height,
@@ -108,7 +117,15 @@ class _NightPainter extends CustomPainter {
       _sparkle(canvas, p, 6 * s, Colors.white.withValues(alpha: a));
     }
 
-    paintMoon(canvas, Offset(40 * s, 78 * s), 18 * s, twinkle: v);
+    if (theme.hasAurora) _aurora(canvas, size, v);
+    switch (theme.celestial) {
+      case Celestial.crescent:
+        paintMoon(canvas, Offset(40 * s, 78 * s), 18 * s, twinkle: v);
+      case Celestial.sun:
+        _sun(canvas, Offset(44 * s, 84 * s), 16 * s, theme.celestialColor);
+      case Celestial.none:
+        break;
+    }
 
     // mountains
     _poly(canvas, s, yb, const [
@@ -121,7 +138,7 @@ class _NightPainter extends CustomPainter {
       Offset(240, 372),
       Offset(240, 400),
       Offset(0, 400),
-    ], const Color(0xFF36359A).withValues(alpha: 0.75));
+    ], theme.far);
     _poly(canvas, s, yb, const [
       Offset(0, 400),
       Offset(44, 376),
@@ -130,17 +147,17 @@ class _NightPainter extends CustomPainter {
       Offset(240, 394),
       Offset(240, 400),
       Offset(0, 400),
-    ], const Color(0xFF2A2A86));
+    ], theme.near);
 
     // lake
     final lake = Rect.fromLTRB(0, yb(398), size.width, size.height);
     canvas.drawRect(
       lake,
       Paint()
-        ..shader = const LinearGradient(
+        ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.lakeTop, AppColors.lakeBottom],
+          colors: [theme.lakeTop, theme.lakeBottom],
         ).createShader(lake),
     );
 
@@ -154,7 +171,7 @@ class _NightPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4 * s;
     for (final w in waves) {
-      wp.color = const Color(0xFFA9AEFF).withValues(alpha: w[3]);
+      wp.color = theme.wave.withValues(alpha: w[3]);
       final shift = 40 * w[2] * v; // design units
       final path = Path();
       for (var x = -4.0; x <= size.width + 4; x += 3) {
@@ -173,10 +190,10 @@ class _NightPainter extends CustomPainter {
       [440.0, 16.0, 0.3],
     ];
     final rp = Paint();
-    for (var i = 0; i < refl.length; i++) {
+    for (var i = 0; theme.celestial != Celestial.none && i < refl.length; i++) {
       final w =
           (refl[i][1] - 3 + 3 * math.sin(2 * math.pi * (v * (3 + i)))) * s;
-      rp.color = const Color(0xFFFFF3C4).withValues(alpha: refl[i][2]);
+      rp.color = theme.celestialColor.withValues(alpha: refl[i][2]);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
@@ -187,6 +204,54 @@ class _NightPainter extends CustomPainter {
           Radius.circular(1.1 * s),
         ),
         rp,
+      );
+    }
+  }
+
+  void _sun(Canvas canvas, Offset c, double r, Color color) {
+    canvas.drawCircle(
+      c,
+      r + 22,
+      Paint()..color = color.withValues(alpha: 0.14),
+    );
+    canvas.drawCircle(
+      c,
+      r + 10,
+      Paint()..color = color.withValues(alpha: 0.22),
+    );
+    canvas.drawCircle(c, r, Paint()..color = color);
+  }
+
+  /// Two slow green and violet bands across the sky.
+  void _aurora(Canvas canvas, Size size, double v) {
+    for (var b = 0; b < 2; b++) {
+      final base = size.height * (0.2 + 0.1 * b);
+      final path = Path()..moveTo(0, base);
+      for (var x = 0.0; x <= size.width; x += 6) {
+        path.lineTo(
+          x,
+          base +
+              math.sin((x / size.width * 2 + v * 2 + b) * math.pi) *
+                  size.height *
+                  0.035,
+        );
+      }
+      path
+        ..lineTo(size.width, base + size.height * 0.16)
+        ..lineTo(0, base + size.height * 0.16)
+        ..close();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              (b == 0 ? const Color(0xFF4FFFB0) : const Color(0xFFB28CFF))
+                  .withValues(alpha: 0.35),
+              Colors.transparent,
+            ],
+          ).createShader(Rect.fromLTWH(0, base, size.width, size.height * 0.2)),
       );
     }
   }
@@ -206,7 +271,7 @@ class _NightPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_NightPainter old) => false;
+  bool shouldRepaint(_NightPainter old) => old.theme != theme;
 }
 
 void _sparkle(Canvas canvas, Offset c, double r, Color color) {

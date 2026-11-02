@@ -118,16 +118,16 @@ class NotEnoughGemsDialog extends StatelessWidget {
           const SizedBox(height: 16),
           WaterButton(
             width: math.min(MediaQuery.sizeOf(context).width - 100, 270),
-            label: 'Get Gems',
-            icon: Icons.storefront_rounded,
-            onPressed: onGetGems,
+            label: 'Watch Ad: +10 gems',
+            icon: Icons.play_circle_fill_rounded,
+            onPressed: onWatchAd,
           ),
           const SizedBox(height: 12),
           GhostButton(
-            label: 'Watch an ad: +25 gems',
-            icon: Icons.play_circle_fill_rounded,
+            label: 'Free gems',
+            icon: Icons.diamond_outlined,
             gold: true,
-            onTap: onWatchAd,
+            onTap: onGetGems,
           ),
           const SizedBox(height: 8),
           GestureDetector(

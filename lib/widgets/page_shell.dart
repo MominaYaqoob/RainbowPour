@@ -34,6 +34,7 @@ class PageShell extends StatefulWidget {
     required this.child,
     this.showGems = true,
     this.gemsTappable = true,
+    this.gems,
   });
 
   final String title;
@@ -42,6 +43,9 @@ class PageShell extends StatefulWidget {
 
   /// When false the gem pill is shown but does nothing (used by the shop).
   final bool gemsTappable;
+
+  /// Live balance from the screen; when null the shell loads it itself.
+  final int? gems;
 
   @override
   State<PageShell> createState() => _PageShellState();
@@ -111,7 +115,7 @@ class _PageShellState extends State<PageShell> {
                     ),
                     widget.showGems
                         ? GemPill(
-                            gems: _gems,
+                            gems: widget.gems ?? _gems,
                             onTap: widget.gemsTappable
                                 ? () => showSoon(context, 'The shop')
                                 : null,

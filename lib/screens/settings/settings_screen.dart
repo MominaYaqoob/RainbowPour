@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_colors.dart';
+import '../../core/app_prefs.dart';
+import '../../core/haptics.dart';
 import '../../widgets/entrance.dart';
+import '../../widgets/info_dialog.dart';
 import '../../widgets/page_shell.dart';
 import 'rate_us_dialog.dart';
 
-/// Settings. UI demo: the switches work on screen but are not saved yet.
+/// Settings. The four switches are saved; their effect comes with the game logic.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -25,6 +28,35 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _music = true;
   bool _vibration = true;
   bool _colorblind = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFlags();
+  }
+
+  Future<void> _loadFlags() async {
+    final s = await AppPrefs.flag('sound');
+    final m = await AppPrefs.flag('music');
+    final v = await AppPrefs.flag('vibration');
+    final c = await AppPrefs.flag('colorblind', def: false);
+    if (!mounted) return;
+    setState(() {
+      _sound = s;
+      _music = m;
+      _vibration = v;
+      _colorblind = c;
+    });
+  }
+
+  void _set(String key, bool v, void Function() apply) {
+    setState(apply);
+    AppPrefs.setFlag(key, v);
+    if (key == 'vibration') {
+      Haptics.enable(v);
+      Haptics.light(); // feel it when switched on
+    }
+  }
 
   @override
   void dispose() {
@@ -46,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               'Sound',
               null,
               _sound,
-              (v) => setState(() => _sound = v),
+              (v) => _set('sound', v, () => _sound = v),
               const [Color(0xFF7FE9FF), Color(0xFF1FA9FF)],
             ),
             _toggle(
@@ -54,7 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               'Music',
               null,
               _music,
-              (v) => setState(() => _music = v),
+              (v) => _set('music', v, () => _music = v),
               const [Color(0xFFB98CFF), Color(0xFF6B3BE0)],
             ),
             _toggle(
@@ -62,7 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               'Vibration',
               null,
               _vibration,
-              (v) => setState(() => _vibration = v),
+              (v) => _set('vibration', v, () => _vibration = v),
               const [Color(0xFF8EF0A0), Color(0xFF2DBE60)],
             ),
             _toggle(
@@ -70,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               'Colorblind mode',
               'Adds symbols on the liquids',
               _colorblind,
-              (v) => setState(() => _colorblind = v),
+              (v) => _set('colorblind', v, () => _colorblind = v),
               const [Color(0xFFFFF27A), Color(0xFFFFA000)],
             ),
           ]),
@@ -83,7 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             _link(Icons.star_rounded, 'Rate Rainbow Pour', null, const [
               Color(0xFFFFF27A),
               Color(0xFFFFA000),
-            ]),
+            ], onTap: () => RateUsDialog.show(context)),
             _link(Icons.tune_rounded, 'Ad privacy options', null, const [
               Color(0xFFB98CFF),
               Color(0xFF6B3BE0),
@@ -96,6 +128,25 @@ class _SettingsScreenState extends State<SettingsScreen>
               Color(0xFFFF9AB0),
               Color(0xFFE0245B),
             ]),
+          ]),
+          const SizedBox(height: 18),
+          _section('UI PREVIEW (DEMO ONLY)', 2, [
+            _link(Icons.hourglass_empty_rounded, 'Ad not ready', null, const [
+              Color(0xFFFFF27A),
+              Color(0xFFFFA000),
+            ], onTap: () => InfoDialog.adNotReady(context)),
+            _link(Icons.event_busy_rounded, 'Daily ad limit', null, const [
+              Color(0xFFFF9AB0),
+              Color(0xFFE0245B),
+            ], onTap: () => InfoDialog.dailyLimit(context)),
+            _link(Icons.schedule_rounded, 'Clock changed', null, const [
+              Color(0xFFFF9AB0),
+              Color(0xFFE0245B),
+            ], onTap: () => InfoDialog.clockChanged(context)),
+            _link(Icons.undo_rounded, 'Extra undo (ad)', null, const [
+              Color(0xFF7FE9FF),
+              Color(0xFF1FA9FF),
+            ], onTap: () => InfoDialog.extraUndo(context, onWatch: () {})),
           ]),
           const SizedBox(height: 22),
           Entrance(
@@ -267,13 +318,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     IconData icon,
     String title,
     String? trailing,
-    List<Color> colors,
-  ) {
+    List<Color> colors, {
+    VoidCallback? onTap,
+  }) {
     return InkWell(
       borderRadius: BorderRadius.circular(22),
-      onTap: () => title.startsWith('Rate')
-          ? RateUsDialog.show(context)
-          : showSoon(context, title),
+      onTap: onTap ?? () => showSoon(context, title),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Row(

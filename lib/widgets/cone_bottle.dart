@@ -24,6 +24,7 @@ class ConeBottle extends StatelessWidget {
     this.tilt = 0,
     this.topLayerFraction = 1,
     this.shape = BottleShape.cone,
+    this.capacity = 4,
   });
 
   final List<int> layers;
@@ -34,6 +35,9 @@ class ConeBottle extends StatelessWidget {
   final double tilt;
   final double topLayerFraction;
   final BottleShape shape;
+
+  /// Layers a full bottle holds (4, 5 or 6); layer height = 72 / capacity.
+  final int capacity;
 
   /// How much of the top layer is still in the bottle when it has been
   /// tilted to [tilt] radians: liquid above the lip has already spilled.
@@ -55,6 +59,7 @@ class ConeBottle extends StatelessWidget {
         tilt,
         topLayerFraction,
         shape,
+        capacity,
       ),
     );
   }
@@ -69,6 +74,7 @@ class _ConeBottlePainter extends CustomPainter {
     this.tilt,
     this.topFraction,
     this.shape,
+    this.capacity,
   );
 
   final List<int> layers;
@@ -78,6 +84,9 @@ class _ConeBottlePainter extends CustomPainter {
   final double tilt;
   final double topFraction;
   final BottleShape shape;
+  final int capacity;
+
+  double get lh => 72 / capacity;
 
   static const _pivot = Offset(18, 55);
 
@@ -134,8 +143,8 @@ class _ConeBottlePainter extends CustomPainter {
       for (var i = 0; i < layers.length; i++) {
         final isTop = i == layers.length - 1 && extraColor == null;
         final f = isTop ? topFraction : 1.0;
-        final nominal = Rect.fromLTWH(0, 110 - 18.0 * (i + 1), 36, 18);
-        final y = nominal.top + 18 * (1 - f);
+        final nominal = Rect.fromLTWH(0, 110 - lh * (i + 1), 36, lh);
+        final y = nominal.top + lh * (1 - f);
         final bottom = i == 0 ? 260.0 : nominal.bottom + 0.6;
         if (f > 0) {
           canvas.drawRect(
@@ -152,8 +161,8 @@ class _ConeBottlePainter extends CustomPainter {
         }
       }
       if (extraColor != null && extra > 0) {
-        final h = 18.6 * extra;
-        final nominal = Rect.fromLTWH(0, top - 18, 36, 18);
+        final h = (lh + 0.6) * extra;
+        final nominal = Rect.fromLTWH(0, top - lh, 36, lh);
         canvas.drawRect(
           Rect.fromLTRB(-wide, top - h, 36 + wide, top + 0.6),
           _liquid(nominal, AppColors.liquid[extraColor!]),
@@ -365,7 +374,7 @@ class _ConeBottlePainter extends CustomPainter {
     final cum = <double>[];
     var prev = 0.0;
     for (var i = 0; i < layers.length; i++) {
-      final full = _areaBelow(outline, 110 - 18.0 * (i + 1));
+      final full = _areaBelow(outline, 110 - lh * (i + 1));
       final isTop = i == layers.length - 1;
       final v = isTop ? prev + (full - prev) * topFraction : full;
       cum.add(v);
@@ -376,7 +385,7 @@ class _ConeBottlePainter extends CustomPainter {
     for (var i = 0; i < layers.length; i++) {
       if (cum[i] <= (i == 0 ? 0 : cum[i - 1]) + 1e-6) continue;
       final level = _levelFor(rot, cum[i]);
-      final nominal = Rect.fromLTWH(0, 110 - 18.0 * (i + 1), 36, 18);
+      final nominal = Rect.fromLTWH(0, 110 - lh * (i + 1), 36, lh);
       canvas.drawRect(
         Rect.fromLTRB(-wide, level, 36 + wide, below ?? 300),
         _liquid(nominal, AppColors.liquid[layers[i]]),
@@ -413,5 +422,6 @@ class _ConeBottlePainter extends CustomPainter {
       old.tilt != tilt ||
       old.topFraction != topFraction ||
       old.shape != shape ||
+      old.capacity != capacity ||
       old.layers != layers;
 }

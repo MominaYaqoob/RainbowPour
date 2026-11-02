@@ -148,7 +148,7 @@ class _LevelMapScreenState extends State<LevelMapScreen>
           if (done || cur) {
             Navigator.of(
               context,
-            ).push(fadeRoute(const GameScreen(), zoom: true));
+            ).push(fadeRoute(GameScreen(level: level), zoom: true));
           } else {
             showSoon(context, 'Level $level');
           }

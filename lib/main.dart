@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'core/haptics.dart';
 import 'screens/splash/studio_splash.dart';
+import 'widgets/background_theme.dart';
 import 'widgets/bottle_shape.dart';
 
 Future<void> main() async {
@@ -21,6 +23,8 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   // Device frames and screen sizes in debug/profile; off in release builds.
   await BottleSkin.load();
+  await BackgroundSkin.load();
+  await Haptics.load();
   runApp(
     DevicePreview(
       enabled: !kReleaseMode,
