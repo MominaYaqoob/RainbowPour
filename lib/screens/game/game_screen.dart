@@ -6,22 +6,27 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
 import '../../core/haptics.dart';
+import '../../game/engine.dart';
+import '../../game/generator.dart';
+import '../../game/level_repository.dart';
+import '../../game/rewards.dart';
+import '../../game/solver.dart';
+import '../../widgets/background_theme.dart';
 import '../../widgets/bottle_shape.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/game_text.dart';
 import '../../widgets/gem_icon.dart';
 import '../../widgets/gem_pill.dart';
+import '../../widgets/info_dialog.dart';
 import '../../widgets/night_background.dart';
 import '../../widgets/water_button.dart';
-import 'level_complete_dialog.dart';
-import '../../widgets/background_theme.dart';
 import '../shop/not_enough_gems_dialog.dart';
+import 'level_complete_dialog.dart';
 import 'level_failed_dialog.dart';
 import 'sample_board.dart';
 
-/// Game screen, UI only: a sample board, the top bar, the three helper
-/// buttons, a pause popup and the reserved banner-ad slot. No game rules yet.
+/// Game screen: the same layout as before, driven by [GameState].
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key, this.level});
 
@@ -41,118 +46,399 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     vsync: this,
     duration: const Duration(seconds: 3),
   )..repeat();
+  late final AnimationController _pour = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+  late final AnimationController _celeb = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
 
-  // sample board: layers bottom to top as color ids
-  late SampleBoard _sample = SampleBoard.forLevel(widget.level ?? 1);
-  List<List<int>> get _board => _sample.bottles;
-  static const _selected = 1;
+  // Empty until the worker isolate finishes the level.
+  SampleBoard _sample = const SampleBoard(4, []);
+  GameState? _play;
+  int _par = 0;
+  int? _selected;
+
+  List<List<int>> get _board {
+    final play = _play;
+    if (play == null) return _sample.bottles;
+    return [for (final bottle in play.board.bottles) bottle.layers];
+  }
+
+  int get _capacity => _play?.board.capacity ?? _sample.capacity;
 
   int _gems = 0;
   late int _level = widget.level ?? 1;
 
   /// Short "preparing" overlay shown while a level loads.
   bool _loading = true;
+  bool _animating = false;
+  bool _settling = false;
+  final Set<int> _celebrating = {};
+  final Map<int, int> _celebrateColor = {};
+  int _pourToken = 0;
+  int? _pourFrom;
+  int? _pourTo;
+  int _pourCount = 0;
+  int _pourColor = 0;
+
+  UndoCredits _undos = UndoCredits();
+  ExtraBottle _extra = ExtraBottle();
+  bool _rewarded = false;
 
   /// Hint: bottle to pour from and into (glow), -1 = none.
   int _hintFrom = -1;
   int _hintTo = -1;
+  bool _undoPulse = false;
+  int _pulseToken = 0;
 
   /// 0.78..1: shrinks the bottom buttons on short screens.
   double _f = 1;
+
+  bool get _busy => _loading || _animating || _settling;
 
   @override
   void initState() {
     super.initState();
     _load();
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _loading = false);
-    });
   }
 
   Future<void> _load() async {
-    final gems = await AppPrefs.gems();
+    final gemsFuture = AppPrefs.gems();
     final level = widget.level ?? await AppPrefs.level();
+    final boardFuture = LevelRepository.getLevel(level);
+    final pause = Future<void>.delayed(const Duration(milliseconds: 900));
+    final gems = await gemsFuture;
+    final generated = await boardFuture;
+    await pause;
     if (!mounted) return;
+    _install(generated, level: level, gems: gems);
+    LevelRepository.prefetch(level);
+  }
+
+  void _install(GeneratedLevel generated, {required int level, int? gems}) {
+    _pourToken++;
+    _pour.stop();
+    _celeb.stop();
+    _pulseToken++;
     setState(() {
-      _gems = gems;
+      if (gems != null) _gems = gems;
       _level = level;
-      _sample = SampleBoard.forLevel(level);
+      _par = generated.par;
+      _play = GameState(board: generated.board);
+      _sample = SampleBoard.fromGenerated(generated);
+      _loading = false;
+      _animating = false;
+      _settling = false;
+      _celebrating.clear();
+      _selected = null;
+      _pourFrom = _pourTo = null;
+      _hintFrom = _hintTo = -1;
+      _undoPulse = false;
+      _undos = UndoCredits();
+      _extra = ExtraBottle();
+      _rewarded = false;
     });
   }
 
-  /// Moves on to the next level and keeps the furthest level saved.
+  /// Moves on to the next level. The furthest unlocked level is saved on a win.
   Future<void> _next() async {
+    if (_busy) return;
     Haptics.light();
-    final next = _level + 1;
+    final next = _level >= 500 ? 500 : _level + 1;
     setState(() {
       _loading = true;
       _hintFrom = _hintTo = -1;
+      _selected = null;
     });
-    if (next > await AppPrefs.level()) await AppPrefs.setLevel(next);
-    await Future.delayed(const Duration(milliseconds: 500));
+    final pending = LevelRepository.getLevel(next);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final generated = await pending;
     if (!mounted) return;
-    setState(() {
-      _level = next;
-      _sample = SampleBoard.forLevel(next);
-      _loading = false;
-    });
+    _install(generated, level: next);
+    LevelRepository.prefetch(next);
   }
 
-  /// Puts the level back to its starting board.
+  /// Puts the level back on the generated board. No new shuffle.
   Future<void> _restart() async {
+    if (_loading) return;
     Haptics.light();
     setState(() {
       _loading = true;
+      _animating = false;
       _hintFrom = _hintTo = -1;
+      _selected = null;
     });
-    await Future.delayed(const Duration(milliseconds: 500));
+    final pending = LevelRepository.getLevel(_level);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final generated = await pending;
     if (!mounted) return;
+    _install(generated, level: _level);
+    LevelRepository.prefetch(_level);
+  }
+
+  void _tapBottle(int index) {
+    if (_busy) return;
+    final play = _play;
+    if (play == null) return;
+    final selected = _selected;
+    if (selected == null) {
+      Haptics.tap();
+      setState(() => _selected = index);
+      return;
+    }
+    if (selected == index) {
+      Haptics.tap();
+      setState(() => _selected = null);
+      return;
+    }
+    final next = play.pour(selected, index);
+    if (next == null) {
+      Haptics.light();
+      setState(() => _selected = null);
+      return;
+    }
+    final count = GameEngine.pourCount(play.board, selected, index);
+    final color = play.board.bottles[selected].topColour ?? 0;
+    final token = ++_pourToken;
     setState(() {
-      _sample = SampleBoard.forLevel(_level);
-      _loading = false;
+      _animating = true;
+      _selected = null;
+      _hintFrom = _hintTo = -1;
+      _pourFrom = selected;
+      _pourTo = index;
+      _pourCount = count;
+      _pourColor = color;
+    });
+    _pour.duration = Duration(milliseconds: math.min(1700, 880 + 150 * count));
+    _pour.forward(from: 0).whenComplete(() async {
+      if (!mounted || token != _pourToken) return;
+      final landed = next.board.bottles[index];
+      final done =
+          landed.isFull && landed.layers.every((l) => l == landed.layers.first);
+      setState(() {
+        _play = next;
+        _animating = false;
+        _pourFrom = _pourTo = null;
+        if (done) {
+          _celebrating.add(index);
+          _celebrateColor[index] = landed.layers.first;
+          _settling = true;
+        }
+      });
+      if (done) {
+        Haptics.success();
+        _celeb.forward(from: 0).whenComplete(() {
+          if (mounted) setState(_celebrating.clear);
+        });
+        // let the effect play before a win popup covers it
+        await Future<void>.delayed(const Duration(milliseconds: 750));
+        if (!mounted || token != _pourToken) return;
+        setState(() => _settling = false);
+      }
+      _afterMove();
     });
   }
 
-  /// Demo hint: finds a loading overlay, then glows two bottles for 2 seconds.
-  Future<void> _hint() async {
-    Haptics.tap();
-    const cost = 25;
-    if (_gems < cost) {
-      NotEnoughGemsDialog.show(
+  void _afterMove() {
+    final play = _play;
+    if (play == null) return;
+    if (play.isWon) {
+      _showWin();
+    } else if (play.isStuck) {
+      _showStuck();
+    }
+  }
+
+  Future<void> _showWin() async {
+    if (_rewarded) return;
+    final play = _play;
+    if (play == null) return;
+    _rewarded = true;
+    final stars = Stars.count(level: _level, par: _par, moves: play.moves);
+    final reward = Rewards.gemsForStars(stars);
+    Haptics.success();
+    final total = await AppPrefs.addGems(reward);
+    final saved = await AppPrefs.level();
+    final unlocked = _level + 1;
+    if (unlocked <= 500 && unlocked > saved) await AppPrefs.setLevel(unlocked);
+    if (!mounted) return;
+    setState(() => _gems = total);
+    LevelCompleteDialog.show(
+      context,
+      level: _level,
+      stars: stars,
+      moves: play.moves,
+      gems: reward,
+      onNext: () {
+        Navigator.of(context).pop();
+        _next();
+      },
+      onReplay: () {
+        Navigator.of(context).pop();
+        _restart();
+      },
+      onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
+    );
+  }
+
+  void _showStuck() {
+    Haptics.fail();
+    LevelFailedDialog.show(
+      context,
+      onUndo: () {
+        Navigator.of(context).pop();
+        _undo();
+      },
+      onExtraBottle: () {
+        final already = _extra.used;
+        final navigator = Navigator.of(context);
+        _addBottle().then((_) {
+          if (!already && _extra.used && mounted) navigator.pop();
+        });
+      },
+      onRestart: () {
+        Navigator.of(context).pop();
+        _restart();
+      },
+      onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
+      onWatchAd: () {
+        Navigator.of(context).pop();
+        // TODO(ads): grant the extra bottle only after a rewarded ad.
+        InfoDialog.adNotReady(context);
+      },
+    );
+  }
+
+  Future<void> _undo() async {
+    if (_busy) return;
+    final play = _play;
+    if (play == null || !play.canUndo) {
+      Haptics.light();
+      return;
+    }
+    if (!_undos.hasAny) {
+      InfoDialog.extraUndo(
         context,
-        need: cost,
-        have: _gems,
-        onGetGems: () {
-          Navigator.of(context).pop();
-          _soon('The shop');
-        },
-        onWatchAd: () {
-          Navigator.of(context).pop();
-          _soon('Rewarded ads');
+        onWatch: () {
+          // TODO(ads): grant these only after a rewarded ad completes.
+          _undos.grantWatchedAd();
+          _undo();
         },
       );
       return;
     }
-    if (!await AppPrefs.spendGems(cost)) return;
-    if (mounted) setState(() => _gems -= cost);
-    setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    final from = _board.indexWhere((b) => b.isNotEmpty);
-    final to = _board.lastIndexWhere((b) => b.isEmpty);
+    _undos.spend();
+    Haptics.tap();
     setState(() {
-      _loading = false;
-      _hintFrom = from;
-      _hintTo = to;
+      _play = play.undo();
+      _selected = null;
+      _hintFrom = _hintTo = -1;
     });
-    await Future.delayed(const Duration(seconds: 2));
+  }
+
+  Future<void> _hint() async {
+    if (_busy) return;
+    final play = _play;
+    if (play == null || play.isWon) return;
+    Haptics.tap();
+    final move = paidHint(play.board);
+    if (move == null) {
+      _pulseUndo();
+      InfoDialog.show(
+        context,
+        icon: Icons.undo_rounded,
+        title: 'Undo a few moves',
+        message: 'This board has no way forward. Undo, then try again.',
+      );
+      return;
+    }
+    const cost = Rewards.hintCost;
+    if (_gems < cost) {
+      _needGems(cost);
+      return;
+    }
+    if (!await AppPrefs.spendGems(cost)) return;
+    if (!mounted) return;
+    setState(() {
+      _gems -= cost;
+      _hintFrom = move.from;
+      _hintTo = move.to;
+    });
+    await Future<void>.delayed(const Duration(seconds: 2));
     if (mounted) setState(() => _hintFrom = _hintTo = -1);
+  }
+
+  Future<void> _addBottle() async {
+    if (_busy) return;
+    final play = _play;
+    if (play == null) return;
+    Haptics.tap();
+    if (!_extra.take()) {
+      InfoDialog.show(
+        context,
+        icon: Icons.add_rounded,
+        title: 'One Bottle Only',
+        message: 'You can add one extra bottle on this level.',
+      );
+      _extra.used = true;
+      return;
+    }
+    const cost = Rewards.bottleCost;
+    if (_gems < cost) {
+      _extra.used = false;
+      _needGems(cost);
+      return;
+    }
+    if (!await AppPrefs.spendGems(cost)) {
+      _extra.used = false;
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _gems -= cost;
+      _selected = null;
+      _play = GameState(
+        board: GameEngine.addEmptyBottle(play.board),
+        moves: play.moves,
+        history: play.history,
+      );
+    });
+  }
+
+  void _needGems(int cost) {
+    NotEnoughGemsDialog.show(
+      context,
+      need: cost,
+      have: _gems,
+      onGetGems: () {
+        Navigator.of(context).pop();
+        _soon('The shop');
+      },
+      onWatchAd: () {
+        Navigator.of(context).pop();
+        _soon('Rewarded ads');
+      },
+    );
+  }
+
+  void _pulseUndo() {
+    final token = ++_pulseToken;
+    setState(() => _undoPulse = true);
+    Future<void>.delayed(const Duration(seconds: 2), () {
+      if (!mounted || token != _pulseToken) return;
+      setState(() => _undoPulse = false);
+    });
   }
 
   @override
   void dispose() {
     _in.dispose();
     _loop.dispose();
+    _pour.dispose();
+    _celeb.dispose();
     super.dispose();
   }
 
@@ -175,46 +461,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       );
   }
 
-  /// Demo trigger: tapping the level pill shows the level-complete popup.
-  void _levelComplete() {
-    Haptics.success();
-    LevelCompleteDialog.show(
-      context,
-      level: _level,
-      onNext: () {
-        Navigator.of(context).pop();
-        _next();
-      },
-      onReplay: () {
-        Navigator.of(context).pop();
-        _restart();
-      },
-      onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
-    );
-  }
-
-  /// Demo trigger: tapping Undo shows the "no moves left" popup.
-  void _levelFailed() {
-    Haptics.fail();
-    LevelFailedDialog.show(
-      context,
-      onUndo: () {
-        Navigator.of(context).pop();
-        _soon('Undo');
-      },
-      onExtraBottle: () {
-        Navigator.of(context).pop();
-        _soon('The extra bottle');
-      },
-      onRestart: () {
-        Navigator.of(context).pop();
-        _restart();
-      },
-      onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
-    );
-  }
-
   void _pause() {
+    if (_animating) return;
     Haptics.tap();
     showGeneralDialog<void>(
       context: context,
@@ -378,7 +626,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0A1040).withValues(alpha: 0.92),
+                          color: const Color(
+                            0xFF0A1040,
+                          ).withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(22),
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.25),
@@ -442,25 +692,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             ),
           ),
           const Spacer(),
-          GestureDetector(
-            onTap: _levelComplete,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A1040).withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.gold.withValues(alpha: 0.7),
-                ),
-              ),
-              child: Text(
-                'Level $_level',
-                style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1040).withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.7)),
+            ),
+            child: Text(
+              'Level $_level',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
               ),
             ),
           ),
@@ -471,139 +715,318 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     );
   }
 
-  /// Two rows of four bottles, each row on its own shelf. Sizes adapt to the
-  /// free space so it fits short screens too.
+  /// Rows of bottles on shelves, sized to the free space. The position of
+  /// every bottle is known here: the pour carries a bottle over its target.
+  _Layout _layoutFor(BoxConstraints c) {
+    final n = _board.length;
+    final rows = n <= 12 ? 2 : 3;
+    final perRow = (n / rows).ceil();
+    final gap = perRow > 5 ? 10.0 : 14.0;
+    const shelf = 16.0;
+    final rowGap = rows > 2 ? 14.0 : 24.0;
+    final byWidth = (c.maxWidth - 48 - gap * (perRow - 1)) / perRow;
+    final byHeight =
+        ((c.maxHeight - rowGap * (rows - 1) - shelf * rows - 40) / rows) *
+        36 /
+        118;
+    // slim bottles: about 11.5% of the screen width
+    final maxW = (c.maxWidth * 0.115).clamp(30.0, 46.0);
+    final w = math.max(24.0, math.min(math.min(byWidth, byHeight), maxW));
+    final h = w * 118 / 36;
+    final blockH = rows * (h + shelf) + rowGap * (rows - 1);
+    // keep room above the first row for a bottle that pours onto it
+    final top0 = math.max(w * 0.7, (c.maxHeight - blockH) / 2);
+    final tops = <Offset>[];
+    final shelves = <Rect>[];
+    for (var r = 0; r < rows; r++) {
+      final start = r * perRow;
+      final end = math.min(n, start + perRow);
+      final k = end - start;
+      if (k <= 0) break;
+      final rowW = w * k + gap * (k - 1);
+      final x0 = (c.maxWidth - rowW) / 2;
+      final rowTop = top0 + r * (h + shelf + rowGap);
+      for (var j = 0; j < k; j++) {
+        tops.add(Offset(x0 + j * (w + gap), rowTop + 8));
+      }
+      shelves.add(Rect.fromLTWH(x0 - 12, rowTop + h + 7, rowW + 24, 9));
+    }
+    return _Layout(w, h, c.maxWidth, tops, shelves);
+  }
+
   Widget _boardArea() {
     return LayoutBuilder(
       builder: (context, c) {
-        final n = _board.length;
-        // 8 bottles: 2x4, up to 12: two even rows, more: three rows of five
-        final perRow = n <= 8 ? 4 : (n <= 12 ? (n + 1) ~/ 2 : 5);
-        final rows = (n / perRow).ceil();
-        final gap = perRow > 5 ? 8.0 : 14.0;
-        const shelf = 16.0;
-        final rowGap = c.maxHeight < 440 || rows > 2 ? 14.0 : 26.0;
-        final byWidth = (c.maxWidth - 40 - gap * (perRow - 1)) / perRow;
-        // leave breathing room above, between and below the rows
-        final byHeight =
-            ((c.maxHeight - rowGap * (rows - 1) - shelf * rows - 28) / rows) *
-            0.9 *
-            36 /
-            118;
-        // keep bottles a sensible size: about 14% of the screen width
-        final maxW = (c.maxWidth * 0.145).clamp(36.0, 56.0);
-        final w = math.max(26.0, math.min(math.min(byWidth, byHeight), maxW));
-        return Center(
-          child: AnimatedBuilder(
-            animation: _loop,
-            builder: (context, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var r = 0; r < rows; r++) ...[
-                  if (r > 0) SizedBox(height: rowGap),
-                  _row(r * perRow, math.min(n, (r + 1) * perRow), w, gap, shelf),
+        if (_board.isEmpty) return const SizedBox.shrink();
+        final lay = _layoutFor(c);
+        return AnimatedBuilder(
+          animation: Listenable.merge([_loop, _pour, _celeb]),
+          builder: (context, _) {
+            final pose = _animating && _pourFrom != null
+                ? _pourPose(lay)
+                : null;
+            return SizedBox(
+              width: c.maxWidth,
+              height: c.maxHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final r in lay.shelves)
+                    Positioned.fromRect(rect: r, child: _shelf()),
+                  for (var i = 0; i < lay.tops.length; i++)
+                    if (pose == null || i != _pourFrom) _bottle(i, lay, pose),
+                  if (pose != null) _pouringBottle(lay, pose),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _FxPainter(
+                          lay: lay,
+                          shape: BottleSkin.shape.value,
+                          stream: pose?.stream,
+                          streamColor: AppColors.liquid[_pourColor],
+                          celebrating: [
+                            for (final i in _celebrating)
+                              if (i < lay.tops.length)
+                                (i, AppColors.liquid[_celebrateColor[i] ?? 0]),
+                          ],
+                          t: _celeb.value,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _row(int start, int end, double w, double gap, double shelf) {
-    final h = w * 118 / 36;
-    final rowW = w * (end - start) + gap * (end - start - 1);
-    return SizedBox(
-      width: rowW + 24,
-      height: h + shelf,
-      child: Stack(
+  Widget _shelf() => Container(
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.78),
+      borderRadius: BorderRadius.circular(5),
+      boxShadow: const [
+        BoxShadow(color: Color(0x55000020), offset: Offset(0, 4)),
+      ],
+    ),
+  );
+
+  Widget _bottle(int i, _Layout lay, _PourPose? pose) {
+    final w = lay.w;
+    final up = i == _selected;
+    final bob = up ? math.sin(2 * math.pi * _loop.value) * 2 : 0.0;
+    final lift = up ? w * 0.3 : 0.0;
+    final look = pose != null && i == _pourTo
+        ? pose.target
+        : _BottleLook(_board[i]);
+    Widget glass = ConeBottle(
+      layers: look.layers,
+      width: w,
+      showShadow: false,
+      shape: BottleSkin.shape.value,
+      capacity: _capacity,
+      extraColor: look.extraColor,
+      extraProgress: look.extra,
+    );
+    if (_celebrating.contains(i)) {
+      // a small squash and stretch when the bottle fills up
+      final b = math.sin(math.pi * math.min(1.0, _celeb.value * 2.2));
+      glass = Transform(
         alignment: Alignment.bottomCenter,
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              height: 9,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.78),
-                borderRadius: BorderRadius.circular(5),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x55000020), offset: Offset(0, 4)),
-                ],
+        transform: Matrix4.diagonal3Values(1 - 0.05 * b, 1 + 0.08 * b, 1),
+        child: glass,
+      );
+    }
+    return Positioned(
+      left: lay.tops[i].dx,
+      top: lay.tops[i].dy,
+      width: w,
+      height: lay.h,
+      child: GestureDetector(
+        onTap: () => _tapBottle(i),
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.bottomCenter,
+          children: [
+            // ground shadow, smaller while the bottle is lifted
+            Positioned(
+              bottom: -2,
+              child: Container(
+                width: w * (up ? 0.6 : 0.9),
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: up ? 0.18 : 0.3),
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 8,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [for (var i = start; i < end; i++) _bottle(i, w)],
-            ),
-          ),
-        ],
+            if (i == _hintFrom || i == _hintTo)
+              Positioned(
+                bottom: -4,
+                child: Container(
+                  width: w * 1.25,
+                  height: lay.h + 8,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(w * 0.45),
+                    color: (i == _hintFrom ? AppColors.gold : Colors.white)
+                        .withValues(alpha: 0.22),
+                    border: Border.all(
+                      color: i == _hintFrom ? AppColors.gold : Colors.white,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+            Positioned(bottom: lift + bob, child: glass),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _bottle(int i, double w) {
-    final up = i == _selected;
-    final bob = up ? math.sin(2 * math.pi * _loop.value) * 2 : 0.0;
-    final lift = up ? w * 0.42 : 0.0;
-    return SizedBox(
-      width: w,
-      height: w * 118 / 36,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.bottomCenter,
-        children: [
-          // ground shadow, smaller while the bottle is lifted
-          Positioned(
-            bottom: -2,
-            child: Container(
-              width: w * (up ? 0.6 : 0.9),
-              height: 6,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: up ? 0.18 : 0.3),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ),
-          if (i == _hintFrom || i == _hintTo)
-            Positioned(
-              bottom: -4,
-              child: Container(
-                width: w * 1.25,
-                height: w * 118 / 36 + 8,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(w * 0.45),
-                  color: (i == _hintFrom ? AppColors.gold : Colors.white)
-                      .withValues(alpha: 0.22),
-                  border: Border.all(
-                    color: i == _hintFrom ? AppColors.gold : Colors.white,
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-          Positioned(
-            bottom: lift + bob,
-            child: ConeBottle(
-              layers: _board[i],
-              width: w,
-              showShadow: false,
-              shape: BottleSkin.shape.value,
-              capacity: _sample.capacity,
-            ),
-          ),
-        ],
+  /// The bottle that is pouring, drawn above everything else so it can sit
+  /// over its target and over the bottles around it.
+  Widget _pouringBottle(_Layout lay, _PourPose pose) {
+    return Positioned(
+      left: pose.topLeft.dx,
+      top: pose.topLeft.dy,
+      width: lay.w,
+      height: lay.h,
+      child: ConeBottle(
+        layers: pose.source.layers,
+        width: lay.w,
+        showShadow: false,
+        shape: BottleSkin.shape.value,
+        capacity: _capacity,
+        tilt: pose.tilt,
+        topLayerFraction: pose.source.fraction,
       ),
     );
+  }
+
+  /// Which way the pouring bottle leans: 1 tips clockwise (its body ends up
+  /// left of the target), -1 the other way. Never toward a screen edge.
+  int _pourDir(_Layout lay, int from, int to) {
+    final fx = lay.tops[from].dx;
+    final tx = lay.tops[to].dx;
+    final room = lay.w * 2.4;
+    final rightOk = tx - room >= 0;
+    final leftOk = tx + lay.w + room <= lay.width;
+    var dir = tx > fx + 1
+        ? 1
+        : (tx < fx - 1 ? -1 : (tx + lay.w / 2 < lay.width / 2 ? -1 : 1));
+    if (dir == 1 && !rightOk && leftOk) dir = -1;
+    if (dir == -1 && !leftOk && rightOk) dir = 1;
+    return dir;
+  }
+
+  /// One frame of a pour: lift and travel to the target (0 to 0.22), pour
+  /// with the lip held above the target's mouth (to 0.8), then go home.
+  _PourPose _pourPose(_Layout lay) {
+    final from = _pourFrom!;
+    final to = _pourTo!;
+    final play = _play!;
+    final src = play.board.bottles[from].layers;
+    final dst = play.board.bottles[to].layers;
+    final shape = BottleSkin.shape.value;
+    final w = lay.w;
+    final s = lay.s;
+    final dir = _pourDir(lay, from, to);
+    final home = lay.tops[from];
+    final target = lay.tops[to];
+    // the lip stays here, a little above the target's opening
+    final hold = Offset(target.dx + w / 2, target.dy + 4 * s - 0.5 * w);
+    final lip = Offset(18 + dir * shape.lipHalf, 4);
+
+    Offset lipAt(double theta) {
+      final dx = lip.dx - 18;
+      final dy = lip.dy - 55;
+      final c = math.cos(theta);
+      final n = math.sin(theta);
+      return Offset(18 + dx * c - dy * n, 55 + dx * n + dy * c) * s;
+    }
+
+    Offset locked(double theta) => hold - lipAt(theta);
+
+    final spill = _tiltAngle(0.998, src.length);
+    final end = _tiltAngle(0.001, math.max(1, src.length - _pourCount + 1));
+    final v = _pour.value;
+    const a = 0.22;
+    const b = 0.8;
+
+    if (v < a) {
+      final e = Curves.easeInOutCubic.transform(v / a);
+      final theta = dir * spill * e;
+      final lifted = home - Offset(0, w * 0.3);
+      return _PourPose(
+        Offset.lerp(lifted, locked(theta), e)!,
+        theta,
+        _BottleLook(src),
+        _BottleLook(dst),
+        null,
+      );
+    }
+    if (v <= b) {
+      final p = (v - a) / (b - a);
+      final progress = (p * _pourCount).clamp(0.0, _pourCount - 0.001);
+      final gone = progress.floor();
+      final part = progress - gone;
+      final left = src.sublist(0, src.length - gone);
+      final fraction = (1 - part).clamp(0.0, 1.0);
+      final theta = dir * _tiltAngle(fraction, left.length);
+      final lh = 72 / _capacity;
+      final surface = target.dy + (110 - lh * (dst.length + progress)) * s;
+      final sw = math.max(3.0, w * 0.13);
+      final showStream = p > 0.03 && p < 0.97 && surface > hold.dy;
+      return _PourPose(
+        locked(theta),
+        theta,
+        _BottleLook(left, fraction: fraction),
+        _BottleLook(dst, extraColor: _pourColor, extra: progress),
+        showStream
+            ? Rect.fromLTRB(
+                hold.dx - sw / 2,
+                hold.dy,
+                hold.dx + sw / 2,
+                surface,
+              )
+            : null,
+      );
+    }
+    final e = Curves.easeInOutCubic.transform(
+      ((v - b) / (1 - b)).clamp(0.0, 1.0),
+    );
+    final theta = dir * end * (1 - e);
+    return _PourPose(
+      Offset.lerp(locked(theta), home, e)!,
+      theta,
+      _BottleLook(src.sublist(0, src.length - _pourCount)),
+      _BottleLook(dst, extraColor: _pourColor, extra: _pourCount.toDouble()),
+      null,
+    );
+  }
+
+  /// Tilt (radians, always positive) at which only [remaining] of the top
+  /// layer is left in a bottle holding [layers] layers.
+  double _tiltAngle(double remaining, int layers) {
+    final r = remaining.clamp(0.0, 0.998);
+    if (layers < 1) return 0;
+    final shape = BottleSkin.shape.value;
+    var lo = 0.0;
+    var hi = 1.35;
+    for (var n = 0; n < 10; n++) {
+      final mid = (lo + hi) / 2;
+      final got = ConeBottle.topLayerFractionForTilt(mid, layers, shape: shape);
+      if (got > r) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return (lo + hi) / 2;
   }
 
   Widget _actionBar() {
@@ -632,9 +1055,25 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _action(Icons.undo_rounded, 'Undo', null, onTap: _levelFailed),
-          _action(Icons.lightbulb_rounded, 'Hint', 25, onTap: _hint),
-          _action(Icons.add_rounded, '+ Bottle', 40),
+          _action(
+            Icons.undo_rounded,
+            'Undo',
+            null,
+            onTap: _undo,
+            pulse: _undoPulse,
+          ),
+          _action(
+            Icons.lightbulb_rounded,
+            'Hint',
+            Rewards.hintCost,
+            onTap: _hint,
+          ),
+          _action(
+            Icons.add_rounded,
+            '+ Bottle',
+            Rewards.bottleCost,
+            onTap: _addBottle,
+          ),
         ],
       ),
     );
@@ -645,8 +1084,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     String label,
     int? cost, {
     VoidCallback? onTap,
+    bool pulse = false,
   }) {
-    return GestureDetector(
+    Widget button(double scale) => GestureDetector(
       onTap: onTap ?? () => _soon(label),
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
@@ -656,41 +1096,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                Container(
-                  width: 58 * _f,
-                  height: 58 * _f,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFF3E6BFF), Color(0xFF1B3FB0)],
-                    ),
-                    border: Border.all(color: Colors.white, width: 2.2),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x66000020),
-                        blurRadius: 8,
-                        offset: Offset(0, 4),
+                Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 58 * _f,
+                    height: 58 * _f,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF3E6BFF), Color(0xFF1B3FB0)],
                       ),
-                    ],
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Positioned(
-                        top: 5,
-                        child: Container(
-                          width: 32,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            color: Colors.white.withValues(alpha: 0.28),
+                      border: Border.all(color: Colors.white, width: 2.2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x66000020),
+                          blurRadius: 8,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned(
+                          top: 5,
+                          child: Container(
+                            width: 32,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              color: Colors.white.withValues(alpha: 0.28),
+                            ),
                           ),
                         ),
-                      ),
-                      Icon(icon, size: 30 * _f, color: Colors.white),
-                    ],
+                        Icon(icon, size: 30 * _f, color: Colors.white),
+                      ],
+                    ),
                   ),
                 ),
                 if (cost != null)
@@ -736,5 +1179,170 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+    if (!pulse) return button(1);
+    return AnimatedBuilder(
+      animation: _loop,
+      builder: (context, _) =>
+          button(1 + 0.07 * math.sin(2 * math.pi * _loop.value).abs()),
+    );
   }
+}
+
+class _BottleLook {
+  const _BottleLook(
+    this.layers, {
+    this.fraction = 1,
+    this.extraColor,
+    this.extra = 0,
+  });
+
+  final List<int> layers;
+  final double fraction;
+  final int? extraColor;
+  final double extra;
+}
+
+/// Where the bottles stand on the board (all in board coordinates).
+class _Layout {
+  _Layout(this.w, this.h, this.width, this.tops, this.shelves);
+
+  final double w;
+  final double h;
+  final double width;
+
+  /// Top-left of every bottle's box.
+  final List<Offset> tops;
+  final List<Rect> shelves;
+
+  /// Scale from the 36-wide bottle drawing to the screen.
+  double get s => w / 36;
+}
+
+/// The pouring bottle and its target for one frame of a pour.
+class _PourPose {
+  const _PourPose(
+    this.topLeft,
+    this.tilt,
+    this.source,
+    this.target,
+    this.stream,
+  );
+
+  final Offset topLeft;
+  final double tilt;
+  final _BottleLook source;
+  final _BottleLook target;
+  final Rect? stream;
+}
+
+/// Effects drawn over the board: the falling stream, and the shine and
+/// sparkles of a bottle that has just been filled with one colour.
+class _FxPainter extends CustomPainter {
+  _FxPainter({
+    required this.lay,
+    required this.shape,
+    required this.stream,
+    required this.streamColor,
+    required this.celebrating,
+    required this.t,
+  });
+
+  final _Layout lay;
+  final BottleShape shape;
+  final Rect? stream;
+  final Color streamColor;
+  final List<(int, Color)> celebrating;
+  final double t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final st = stream;
+    if (st != null) {
+      final r = Radius.circular(st.width / 2);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(st, r),
+        Paint()..color = Color.lerp(streamColor, Colors.white, 0.15)!,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            st.left + st.width * 0.2,
+            st.top,
+            st.width * 0.25,
+            st.height,
+          ),
+          r,
+        ),
+        Paint()..color = Colors.white.withValues(alpha: 0.5),
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(st.center.dx, st.bottom),
+          width: st.width * 3.2,
+          height: st.width * 1.1,
+        ),
+        Paint()..color = streamColor.withValues(alpha: 0.55),
+      );
+    }
+    for (final (index, color) in celebrating) {
+      _celebrate(canvas, lay.tops[index], color);
+    }
+  }
+
+  void _celebrate(Canvas canvas, Offset top, Color color) {
+    final w = lay.w;
+    final s = lay.s;
+    // shine: a soft diagonal band sweeping up the glass
+    final path = shape.path().transform(
+      Matrix4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, top.dx, top.dy, 0, 1).storage,
+    );
+    canvas.save();
+    canvas.clipPath(path);
+    canvas.translate(top.dx + w / 2, top.dy + lay.h * (1 - 1.2 * t));
+    canvas.rotate(-0.55);
+    canvas.drawRect(
+      Rect.fromCenter(center: Offset.zero, width: w * 3, height: w * 0.5),
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.6 * math.sin(math.pi * t)),
+    );
+    canvas.restore();
+    // sparkles fanning out above the opening
+    for (var k = 0; k < 7; k++) {
+      final angle = -math.pi * (0.15 + 0.7 * k / 6);
+      final dist = w * (0.4 + 1.6 * t);
+      final c = Offset(
+        top.dx + w / 2 + math.cos(angle) * dist * 1.3,
+        top.dy + 6 * s + math.sin(angle) * dist * 1.5,
+      );
+      final r = w * 0.34 * (1 - t) * (k.isEven ? 1 : 0.7);
+      _star(
+        canvas,
+        c,
+        r,
+        Paint()
+          ..color =
+              (k.isEven ? Colors.white : Color.lerp(color, Colors.white, 0.5)!)
+                  .withValues(alpha: (1 - t).clamp(0.0, 1.0)),
+      );
+    }
+  }
+
+  void _star(Canvas canvas, Offset c, double r, Paint paint) {
+    if (r <= 0.3) return;
+    final k = r * 0.28;
+    final p = Path()
+      ..moveTo(c.dx, c.dy - r)
+      ..lineTo(c.dx + k, c.dy - k)
+      ..lineTo(c.dx + r, c.dy)
+      ..lineTo(c.dx + k, c.dy + k)
+      ..lineTo(c.dx, c.dy + r)
+      ..lineTo(c.dx - k, c.dy + k)
+      ..lineTo(c.dx - r, c.dy)
+      ..lineTo(c.dx - k, c.dy - k)
+      ..close();
+    canvas.drawPath(p, paint);
+  }
+
+  @override
+  bool shouldRepaint(_FxPainter old) => true;
 }

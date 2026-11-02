@@ -32,8 +32,8 @@ class _HelpersIllustrationState extends State<HelpersIllustration>
 
   static const _items = [
     (Icons.undo_rounded, 'Undo', null),
-    (Icons.lightbulb_rounded, 'Hint', 25),
-    (Icons.add_rounded, '+ Bottle', 40),
+    (Icons.lightbulb_rounded, 'Hint', 40),
+    (Icons.add_rounded, '+ Bottle', 70),
   ];
   static const _xs = [36.0, 108.0, 180.0];
 

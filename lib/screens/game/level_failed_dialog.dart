@@ -18,6 +18,7 @@ class LevelFailedDialog extends StatefulWidget {
     required this.onExtraBottle,
     required this.onRestart,
     required this.onHome,
+    this.onWatchAd,
   });
 
   final VoidCallback onUndo;
@@ -25,12 +26,16 @@ class LevelFailedDialog extends StatefulWidget {
   final VoidCallback onRestart;
   final VoidCallback onHome;
 
+  /// The "watch an ad" row. Defaults to [onExtraBottle] when ads are not wired.
+  final VoidCallback? onWatchAd;
+
   static Future<void> show(
     BuildContext context, {
     required VoidCallback onUndo,
     required VoidCallback onExtraBottle,
     required VoidCallback onRestart,
     required VoidCallback onHome,
+    VoidCallback? onWatchAd,
   }) {
     return showGeneralDialog<void>(
       context: context,
@@ -43,6 +48,7 @@ class LevelFailedDialog extends StatefulWidget {
         onExtraBottle: onExtraBottle,
         onRestart: onRestart,
         onHome: onHome,
+        onWatchAd: onWatchAd,
       ),
       transitionBuilder: (context, a, _, child) {
         final c = CurvedAnimation(parent: a, curve: Curves.easeOutBack);
@@ -140,7 +146,7 @@ class _LevelFailedDialogState extends State<LevelFailedDialog>
                         Icons.add_rounded,
                         '+ Bottle',
                         'Extra space',
-                        40,
+                        70,
                         widget.onExtraBottle,
                       ),
                     ),
@@ -155,7 +161,7 @@ class _LevelFailedDialogState extends State<LevelFailedDialog>
                 ),
                 const SizedBox(height: 12),
                 GestureDetector(
-                  onTap: widget.onExtraBottle,
+                  onTap: widget.onWatchAd ?? widget.onExtraBottle,
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
