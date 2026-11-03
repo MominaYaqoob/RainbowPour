@@ -3,6 +3,14 @@ import 'dart:typed_data';
 import 'engine.dart';
 import 'models.dart';
 
+/// A bottle is one int: colour ids (plus one) in four bits per layer from the
+/// bottom, and the layer count above bit 24. Six layers is the most we pack.
+/// (Five bits per layer was tried for 20 colours and broke the search.)
+const int _bits = 4;
+const int _mask = 15;
+const int _lenShift = 24;
+const int _maxLayers = 6;
+
 /// Best-first search over useful pours, plus a hint when the search is short.
 ///
 /// The visited set stores a sorted pack of bottle ints (one int per bottle).
@@ -20,8 +28,23 @@ abstract final class Solver {
     List<Move>? prefer,
   }) {
     if (maxNodes < 1) return null;
+    // The search packs a colour into four bits, so colours are renumbered
+    // 0, 1, 2 ... first. More than 14 different colours do not fit, so big boards use the greedy hint.
+    final ids = <int, int>{};
+    for (final bottle in board.bottles) {
+      for (final layer in bottle.layers) {
+        ids.putIfAbsent(layer, () => ids.length);
+      }
+    }
+    if (ids.length > 14 || board.capacity > _maxLayers) return null;
+    final packed = Board([
+      for (final bottle in board.bottles)
+        Bottle(bottle.capacity, [
+          for (final layer in bottle.layers) ids[layer]!,
+        ]),
+    ]);
     if (maxNodes > Solver.maxNodes) maxNodes = Solver.maxNodes;
-    return _Search(board, maxNodes, prefer).run();
+    return _Search(packed, maxNodes, prefer).run();
   }
 
   /// First move of a solution, or a greedy useful pour if the budget runs out.
@@ -31,33 +54,50 @@ abstract final class Solver {
     return _greedy(board);
   }
 
+  /// A good next pour for a board too big to search. It picks the useful
+  /// pour that leaves the table closest to sorted (see [_potential]).
   static Move? _greedy(Board board) {
     final moves = GameEngine.usefulMoves(board);
     Move? best;
-    var score = -1 << 30;
+    var bestScore = 1 << 30;
     for (final move in moves) {
-      final ontoSame = !board.bottles[move.to].isEmpty;
-      final uniform = _uniform(board.bottles[move.from]);
-      // Same-colour targets first. Parking a finished stack is a last resort.
-      var next = move.count;
-      if (ontoSame) next += 4;
-      if (uniform) next -= 3;
-      if (next > score) {
-        score = next;
+      final after = GameEngine.pour(board, move.from, move.to)!.board;
+      var score = _potential(after) * 8;
+      // on equal footing prefer bigger pours, and stacking on the same colour
+      score -= move.count;
+      if (!board.bottles[move.to].isEmpty) score -= 2;
+      if (score < bestScore) {
+        bestScore = score;
         best = move;
       }
     }
     return best;
   }
 
-  static bool _uniform(Bottle bottle) {
-    final layers = bottle.layers;
-    if (layers.length <= 1) return true;
-    final colour = layers.first;
-    for (final layer in layers) {
-      if (layer != colour) return false;
+  /// Lower is closer to solved: three for every extra bottle a colour is
+  /// spread over, plus one for every unit that sits above a different colour.
+  static int _potential(Board board) {
+    final homes = <int, int>{};
+    var buried = 0;
+    for (final bottle in board.bottles) {
+      final layers = bottle.layers;
+      if (layers.isEmpty) continue;
+      final seen = <int>{};
+      var base = true;
+      for (var i = 0; i < layers.length; i++) {
+        if (i > 0 && layers[i] != layers[i - 1]) base = false;
+        if (!base) buried++;
+        seen.add(layers[i]);
+      }
+      for (final colour in seen) {
+        homes[colour] = (homes[colour] ?? 0) + 1;
+      }
     }
-    return true;
+    var spread = 0;
+    for (final count in homes.values) {
+      spread += count - 1;
+    }
+    return spread * 3 + buried;
   }
 }
 
@@ -152,7 +192,7 @@ class _Search {
     }
     for (var from = 0; from < count; from++) {
       final src = _arena[base + from];
-      if (src >>> 24 == 0) continue;
+      if (src >>> _lenShift == 0) continue;
       for (var to = 0; to < count; to++) {
         if (to == from) continue;
         if (_nodes >= maxNodes) return;
@@ -166,17 +206,17 @@ class _Search {
       return;
     }
     final src = _arena[base + from];
-    final srcLen = src >>> 24;
+    final srcLen = src >>> _lenShift;
     if (srcLen == 0) return;
     final dst = _arena[base + to];
-    final dstLen = dst >>> 24;
+    final dstLen = dst >>> _lenShift;
     final space = capacity - dstLen;
     if (space == 0) return;
     final run = _run(src);
     if (dstLen == 0) {
       if (run == srcLen) return;
-    } else if (((dst >> ((dstLen - 1) * 4)) & 15) !=
-        ((src >> ((srcLen - 1) * 4)) & 15)) {
+    } else if (((dst >> ((dstLen - 1) * _bits)) & _mask) !=
+        ((src >> ((srcLen - 1) * _bits)) & _mask)) {
       return;
     }
     final pour = run < space ? run : space;
@@ -191,7 +231,7 @@ class _Search {
       to,
       pour,
       _cut(src, pour),
-      _addLayers(dst, (src >> ((srcLen - 1) * 4)) & 15, pour),
+      _addLayers(dst, (src >> ((srcLen - 1) * _bits)) & _mask, pour),
       follows,
     );
   }
@@ -279,12 +319,12 @@ class _Search {
     var mixed = 0;
     for (var b = 0; b < count; b++) {
       final packed = _arena[base + b];
-      final len = packed >>> 24;
+      final len = packed >>> _lenShift;
       if (len == 0) continue;
-      var previous = packed & 15;
+      var previous = packed & _mask;
       var uniform = true;
       for (var i = 1; i < len; i++) {
-        final nibble = (packed >> (i * 4)) & 15;
+        final nibble = (packed >> (i * _bits)) & _mask;
         if (nibble != previous) {
           changes++;
           uniform = false;
@@ -300,7 +340,7 @@ class _Search {
     final base = node * count;
     for (var i = 0; i < count; i++) {
       final packed = _arena[base + i];
-      final len = packed >>> 24;
+      final len = packed >>> _lenShift;
       if (len == 0) continue;
       if (len != capacity || _run(packed) != len) return false;
     }
@@ -373,36 +413,36 @@ class _Search {
     var colors = 0;
     final layers = bottle.layers;
     for (var i = 0; i < layers.length; i++) {
-      colors |= (layers[i] + 1) << (i * 4);
+      colors |= (layers[i] + 1) << (i * _bits);
     }
-    return colors | (layers.length << 24);
+    return colors | (layers.length << _lenShift);
   }
 }
 
 int _run(int packed) {
-  final len = packed >>> 24;
-  final nibble = (packed >> ((len - 1) * 4)) & 15;
+  final len = packed >>> _lenShift;
+  final nibble = (packed >> ((len - 1) * _bits)) & _mask;
   var run = 1;
   for (var i = len - 2; i >= 0; i--) {
-    if (((packed >> (i * 4)) & 15) != nibble) break;
+    if (((packed >> (i * _bits)) & _mask) != nibble) break;
     run++;
   }
   return run;
 }
 
 int _cut(int packed, int pour) {
-  final len = (packed >>> 24) - pour;
+  final len = (packed >>> _lenShift) - pour;
   if (len == 0) return 0;
-  return (packed & ((1 << (len * 4)) - 1)) | (len << 24);
+  return (packed & ((1 << (len * _bits)) - 1)) | (len << _lenShift);
 }
 
 int _addLayers(int packed, int nibble, int pour) {
-  final len = packed >>> 24;
-  var colors = packed & ((1 << 24) - 1);
+  final len = packed >>> _lenShift;
+  var colors = packed & ((1 << _lenShift) - 1);
   for (var i = 0; i < pour; i++) {
-    colors |= nibble << ((len + i) * 4);
+    colors |= nibble << ((len + i) * _bits);
   }
-  return colors | ((len + pour) << 24);
+  return colors | ((len + pour) << _lenShift);
 }
 
 int _pow2AtLeast(int n) {

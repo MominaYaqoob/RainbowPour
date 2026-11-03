@@ -32,5 +32,13 @@ abstract final class AppColors {
     Color(0xFF9A5B33), // brown
     Color(0xFF0FA08A), // teal
     Color(0xFF9AA3B8), // grey
+    Color(0xFFF3E3B3), // cream
+    Color(0xFF8E1B3A), // maroon
+    Color(0xFF2B3A9E), // indigo
+    Color(0xFFFFB38A), // peach
+    Color(0xFF9BDCFF), // sky
+    Color(0xFFD62BC4), // magenta
+    Color(0xFF7C8A1E), // olive
+    Color(0xFF8CF0C8), // mint
   ];
 }

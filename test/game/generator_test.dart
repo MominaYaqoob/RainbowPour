@@ -20,15 +20,15 @@ void main() {
   });
 
   test(
-    'levels 1 to 500 generate, solve, and stay under the time budget',
+    'every level generates, solves, and stays under the time budget',
     () {
       final pars = <int, int>{};
-      const marks = [1, 10, 50, 100, 200, 300, 400, 500];
+      const marks = [1, 10, 50, 100, 150, 200, 250, 300];
       var total = 0;
       var maxUs = 0;
       var maxLevel = 1;
 
-      for (var level = 1; level <= 500; level++) {
+      for (var level = 1; level <= DifficultyCurve.maxLevel; level++) {
         final spec = DifficultyCurve.specFor(level);
         final seed = level * 7919 + 13;
         final watch = Stopwatch()..start();
@@ -41,25 +41,28 @@ void main() {
         }
         _expectPlayable(generated.board, generated.solution, spec);
         expect(generated.par, generated.solution.length);
-        expect(
-          generated.par,
-          greaterThanOrEqualTo(DifficultyCurve.parFloor(level)),
-        );
+        // the tutorial is a fixed three-pour board, shorter on purpose
+        if (!spec.isTutorial) {
+          expect(
+            generated.par,
+            greaterThanOrEqualTo(DifficultyCurve.parFloor(level)),
+          );
+        }
         if (marks.contains(level)) pars[level] = generated.par;
       }
 
-      final avgMs = total / 500 / 1000;
+      final avgMs = total / DifficultyCurve.maxLevel / 1000;
       final maxMs = maxUs / 1000;
       stdout.writeln(
-        'levels 1-500: avg ${avgMs.toStringAsFixed(2)} ms, '
+        'levels 1-300: avg ${avgMs.toStringAsFixed(2)} ms, '
         'max ${maxMs.toStringAsFixed(2)} ms at level $maxLevel',
       );
       stdout.writeln(
         'par L1=${pars[1]} L10=${pars[10]} L50=${pars[50]} '
-        'L100=${pars[100]} L200=${pars[200]} L300=${pars[300]} '
-        'L400=${pars[400]} L500=${pars[500]}',
+        'L100=${pars[100]} L150=${pars[150]} L200=${pars[200]} '
+        'L250=${pars[250]} L300=${pars[300]}',
       );
-      expect(pars[400], greaterThan(pars[10]! * 3 ~/ 2));
+      expect(pars[250], greaterThan(pars[10]! * 3 ~/ 2));
       expect(
         avgMs,
         lessThan(200),
@@ -76,8 +79,9 @@ void main() {
 }
 
 void _expectPlayable(Board board, List<Move> moves, LevelSpec spec) {
-  final counts = List<int>.filled(spec.colors, 0);
+  final counts = <int, int>{};
   var empties = 0;
+  var partial = 0;
   for (final bottle in board.bottles) {
     expect(bottle.capacity, spec.capacity);
     if (bottle.isEmpty) {
@@ -85,15 +89,22 @@ void _expectPlayable(Board board, List<Move> moves, LevelSpec spec) {
       continue;
     }
     for (final colour in bottle.layers) {
-      expect(colour, inInclusiveRange(0, spec.colors - 1));
-      counts[colour]++;
+      expect(colour, inInclusiveRange(0, DifficultyCurve.maxColors - 1));
+      counts[colour] = (counts[colour] ?? 0) + 1;
     }
   }
   expect(board.bottles, hasLength(spec.bottles));
-  expect(empties, 2);
-  for (final count in counts) {
-    expect(count, spec.capacity);
+  expect(empties, greaterThanOrEqualTo(spec.empties));
+  expect(counts.length, spec.colors);
+  var units = 0;
+  for (final count in counts.values) {
+    // every colour fills one bottle, or two for the repeated colours
+    expect(count % spec.capacity, 0);
+    expect(count ~/ spec.capacity, inInclusiveRange(1, 2));
+    units += count;
   }
+  expect(units, spec.fullBottles * spec.capacity);
+  expect(partial, 0);
   expect(GameEngine.isWon(board), isFalse);
   expect(GameEngine.isStuck(board), isFalse);
 

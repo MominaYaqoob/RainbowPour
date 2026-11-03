@@ -1,3 +1,4 @@
+import 'engine.dart';
 import 'models.dart';
 import 'solver.dart';
 
@@ -54,10 +55,11 @@ class ExtraBottle {
   }
 }
 
-/// The move a paid hint may show. Null means the fast search found no
-/// solution, so the player should undo instead of spending gems.
+/// The move a paid hint shows. Null means no useful pour is left, so the
+/// player should undo instead of spending gems. Small boards get the first
+/// move of a searched solution; big boards get the pour that leaves the
+/// table closest to sorted.
 Move? paidHint(Board board) {
-  final line = Solver.solve(board);
-  if (line == null || line.isEmpty) return null;
-  return line.first;
+  if (GameEngine.isStuck(board)) return null;
+  return Solver.hint(board);
 }

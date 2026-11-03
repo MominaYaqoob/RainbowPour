@@ -6,9 +6,11 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
 import '../../core/haptics.dart';
+import '../../game/difficulty.dart';
 import '../../game/engine.dart';
 import '../../game/generator.dart';
 import '../../game/level_repository.dart';
+import '../../game/models.dart';
 import '../../game/rewards.dart';
 import '../../game/solver.dart';
 import '../../widgets/background_theme.dart';
@@ -92,6 +94,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   int _hintFrom = -1;
   int _hintTo = -1;
   bool _undoPulse = false;
+
+  /// Level 1 teaching: the pours to guide the player through, or null.
+  List<Move>? _tutorialMoves;
+  int _tutorialStep = 0;
+  bool _tutorialDone = false;
   int _pulseToken = 0;
 
   /// 0.78..1: shrinks the bottom buttons on short screens.
@@ -107,6 +114,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   Future<void> _load() async {
     final gemsFuture = AppPrefs.gems();
+    _tutorialDone = await AppPrefs.flag('tutorial', def: false);
     final level = widget.level ?? await AppPrefs.level();
     final boardFuture = LevelRepository.getLevel(level);
     final pause = Future<void>.delayed(const Duration(milliseconds: 900));
@@ -137,6 +145,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _pourFrom = _pourTo = null;
       _hintFrom = _hintTo = -1;
       _undoPulse = false;
+      _tutorialMoves = generated.spec.isTutorial && !_tutorialDone
+          ? generated.solution
+          : null;
+      _tutorialStep = 0;
       _undos = UndoCredits();
       _extra = ExtraBottle();
       _rewarded = false;
@@ -147,7 +159,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Future<void> _next() async {
     if (_busy) return;
     Haptics.light();
-    final next = _level >= 500 ? 500 : _level + 1;
+    final next = _level >= DifficultyCurve.maxLevel
+        ? DifficultyCurve.maxLevel
+        : _level + 1;
     setState(() {
       _loading = true;
       _hintFrom = _hintTo = -1;
@@ -179,10 +193,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     LevelRepository.prefetch(_level);
   }
 
+  /// The bottle the tutorial wants tapped next, or null outside the tutorial.
+  int? get _tutorialTarget {
+    final moves = _tutorialMoves;
+    if (moves == null || _busy || _tutorialStep >= moves.length) return null;
+    final move = moves[_tutorialStep];
+    return _selected == null ? move.from : move.to;
+  }
+
   void _tapBottle(int index) {
     if (_busy) return;
     final play = _play;
     if (play == null) return;
+    if (_tutorialMoves != null && index != _tutorialTarget) {
+      Haptics.light();
+      return;
+    }
     final selected = _selected;
     if (selected == null) {
       Haptics.tap();
@@ -222,6 +248,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _play = next;
         _animating = false;
         _pourFrom = _pourTo = null;
+        if (_tutorialMoves != null) _tutorialStep++;
         if (done) {
           _celebrating.add(index);
           _celebrateColor[index] = landed.layers.first;
@@ -257,13 +284,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final play = _play;
     if (play == null) return;
     _rewarded = true;
+    if (_tutorialMoves != null) {
+      setState(() => _tutorialMoves = null);
+      _tutorialDone = true;
+      AppPrefs.setFlag('tutorial', true);
+    }
     final stars = Stars.count(level: _level, par: _par, moves: play.moves);
     final reward = Rewards.gemsForStars(stars);
     Haptics.success();
     final total = await AppPrefs.addGems(reward);
     final saved = await AppPrefs.level();
     final unlocked = _level + 1;
-    if (unlocked <= 500 && unlocked > saved) await AppPrefs.setLevel(unlocked);
+    if (unlocked <= DifficultyCurve.maxLevel && unlocked > saved) {
+      await AppPrefs.setLevel(unlocked);
+    }
     if (!mounted) return;
     setState(() => _gems = total);
     LevelCompleteDialog.show(
@@ -313,7 +347,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _undo() async {
-    if (_busy) return;
+    if (_busy || _tutorialMoves != null) return;
     final play = _play;
     if (play == null || !play.canUndo) {
       Haptics.light();
@@ -340,7 +374,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _hint() async {
-    if (_busy) return;
+    if (_busy || _tutorialMoves != null) return;
     final play = _play;
     if (play == null || play.isWon) return;
     Haptics.tap();
@@ -372,7 +406,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _addBottle() async {
-    if (_busy) return;
+    if (_busy || _tutorialMoves != null) return;
     final play = _play;
     if (play == null) return;
     Haptics.tap();
@@ -719,7 +753,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   /// every bottle is known here: the pour carries a bottle over its target.
   _Layout _layoutFor(BoxConstraints c) {
     final n = _board.length;
-    final rows = n <= 12 ? 2 : 3;
+    final rows = n <= 4 ? 1 : (n <= 12 ? 2 : (n <= 18 ? 3 : 4));
     final perRow = (n / rows).ceil();
     final gap = perRow > 5 ? 10.0 : 14.0;
     const shelf = 16.0;
@@ -730,7 +764,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         36 /
         118;
     // slim bottles: about 11.5% of the screen width
-    final maxW = (c.maxWidth * 0.115).clamp(30.0, 46.0);
+    final maxW = (c.maxWidth * (rows == 1 ? 0.15 : 0.115)).clamp(30.0, 56.0);
     final w = math.max(24.0, math.min(math.min(byWidth, byHeight), maxW));
     final h = w * 118 / 36;
     final blockH = rows * (h + shelf) + rowGap * (rows - 1);
@@ -776,6 +810,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   for (var i = 0; i < lay.tops.length; i++)
                     if (pose == null || i != _pourFrom) _bottle(i, lay, pose),
                   if (pose != null) _pouringBottle(lay, pose),
+                  if (_tutorialTarget != null) ..._tutorialGuide(lay),
                   Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(
@@ -863,7 +898,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            if (i == _hintFrom || i == _hintTo)
+            if (i == _hintFrom || i == _hintTo || i == _tutorialTarget)
               Positioned(
                 bottom: -4,
                 child: Container(
@@ -871,10 +906,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   height: lay.h + 8,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(w * 0.45),
-                    color: (i == _hintFrom ? AppColors.gold : Colors.white)
-                        .withValues(alpha: 0.22),
+                    color:
+                        (i == _hintFrom || i == _tutorialTarget
+                                ? AppColors.gold
+                                : Colors.white)
+                            .withValues(alpha: 0.22),
                     border: Border.all(
-                      color: i == _hintFrom ? AppColors.gold : Colors.white,
+                      color: i == _hintFrom || i == _tutorialTarget
+                          ? AppColors.gold
+                          : Colors.white,
                       width: 2,
                     ),
                   ),
@@ -885,6 +925,66 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+
+  static const _tutorialSelect = [
+    'Welcome! Tap the glowing bottle',
+    'Good! Tap the glowing bottle again',
+    'Last one! Tap the glowing bottle',
+  ];
+  static const _tutorialPour = [
+    'Now tap the empty bottle to pour',
+    'Pour it onto the same colour',
+    'Pour it in to finish the colours',
+  ];
+
+  /// A hand over the bottle to tap and a short instruction.
+  List<Widget> _tutorialGuide(_Layout lay) {
+    final target = _tutorialTarget!;
+    final step = math.min(_tutorialStep, _tutorialSelect.length - 1);
+    final text = _selected == null
+        ? _tutorialSelect[step]
+        : _tutorialPour[step];
+    final top = lay.tops[target];
+    final bob = math.sin(2 * math.pi * _loop.value) * 6;
+    return [
+      Positioned(
+        left: 16,
+        right: 16,
+        top: 6,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1040).withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.gold, width: 1.6),
+            ),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        left: top.dx + lay.w / 2 - 6,
+        top: top.dy + lay.h * 0.55 + bob,
+        child: const IgnorePointer(
+          child: Icon(
+            Icons.touch_app_rounded,
+            size: 40,
+            color: Colors.white,
+            shadows: [Shadow(color: Color(0xAA000020), blurRadius: 6)],
+          ),
+        ),
+      ),
+    ];
   }
 
   /// The bottle that is pouring, drawn above everything else so it can sit
@@ -1031,8 +1131,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   Widget _actionBar() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: EdgeInsets.fromLTRB(4, 10 * _f, 4, 8 * _f),
+      margin: const EdgeInsets.symmetric(horizontal: 40),
+      padding: EdgeInsets.fromLTRB(4, 6 * _f, 4, 5 * _f),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
         gradient: LinearGradient(
@@ -1090,7 +1190,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       onTap: onTap ?? () => _soon(label),
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 84,
+        width: 66,
         child: Column(
           children: [
             Stack(
@@ -1099,8 +1199,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 Transform.scale(
                   scale: scale,
                   child: Container(
-                    width: 58 * _f,
-                    height: 58 * _f,
+                    width: 42 * _f,
+                    height: 42 * _f,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: const LinearGradient(
@@ -1121,25 +1221,25 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       alignment: Alignment.center,
                       children: [
                         Positioned(
-                          top: 5,
+                          top: 3,
                           child: Container(
-                            width: 32,
-                            height: 14,
+                            width: 22,
+                            height: 10,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(10),
                               color: Colors.white.withValues(alpha: 0.28),
                             ),
                           ),
                         ),
-                        Icon(icon, size: 30 * _f, color: Colors.white),
+                        Icon(icon, size: 22 * _f, color: Colors.white),
                       ],
                     ),
                   ),
                 ),
                 if (cost != null)
                   Positioned(
-                    right: -13,
-                    top: -10,
+                    right: -12,
+                    top: -8,
                     child: Container(
                       padding: const EdgeInsets.fromLTRB(4, 2, 7, 2),
                       decoration: BoxDecoration(
@@ -1150,12 +1250,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const GemIcon(size: 11),
+                          const GemIcon(size: 9),
                           const SizedBox(width: 2),
                           Text(
                             '$cost',
                             style: GoogleFonts.outfit(
-                              fontSize: 10.5,
+                              fontSize: 9.5,
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF4A2A00),
                             ),
@@ -1166,11 +1266,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 3),
             Text(
               label,
               style: GoogleFonts.outfit(
-                fontSize: 12.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
               ),

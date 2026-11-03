@@ -34,7 +34,7 @@ void main() {
     expect(bottle.take(), isFalse);
   });
 
-  test('a paid hint exists only when the solver finds a solution', () {
+  test('a paid hint exists only while a useful pour is left', () {
     final open = Board.layers(2, [
       [0, 1],
       [1],

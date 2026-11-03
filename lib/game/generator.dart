@@ -45,7 +45,30 @@ abstract final class LevelGenerator {
     });
   }
 
+  /// Level 1: two colours, three bottles, three pours. The tutorial walks
+  /// the player through exactly this line.
+  static GeneratedLevel _tutorial(LevelSpec spec) {
+    final board = Board.layers(4, [
+      [0, 0, 1, 1],
+      [1, 1, 0, 0],
+      [],
+    ]);
+    const line = [
+      Move(from: 0, to: 2, count: 2),
+      Move(from: 1, to: 0, count: 2),
+      Move(from: 1, to: 2, count: 2),
+    ];
+    return GeneratedLevel(
+      spec: spec,
+      board: board,
+      par: line.length,
+      solution: line,
+      attempts: 1,
+    );
+  }
+
   static GeneratedLevel generate(LevelSpec spec, int seed) {
+    if (spec.isTutorial) return _tutorial(spec);
     for (var attempt = 0; attempt < 24; attempt++) {
       final built = _build(spec, seed + attempt);
       if (built != null) {
@@ -66,19 +89,24 @@ abstract final class LevelGenerator {
     final tubes = <List<int>>[
       for (var color = 0; color < spec.colors; color++)
         [for (var i = 0; i < spec.capacity; i++) color],
-      for (var i = 0; i < 2; i++) <int>[],
+      // colours that fill a second bottle
+      for (var color = 0; color < spec.duplicates; color++)
+        [for (var i = 0; i < spec.capacity; i++) color],
+      for (var i = 0; i < spec.bottles - spec.fullBottles; i++) <int>[],
     ];
     final history = <String>[_key(tubes)];
     final guide = <Move>[];
-    final steps = 60 + 12 * spec.colors;
+    final steps = DifficultyCurve.scrambleSteps(spec);
     final floor = DifficultyCurve.parFloor(spec.level);
     List<List<int>>? bestTubes;
     List<Move>? bestGuide;
     var bestExtra = -1;
 
     void remember() {
-      if (_emptyCount(tubes) != 2 || _won(tubes, spec.capacity)) return;
-      final extra = _segments(tubes) - spec.colors;
+      if (_emptyCount(tubes) < spec.empties || _won(tubes, spec.capacity)) {
+        return;
+      }
+      final extra = _segments(tubes) - spec.fullBottles;
       final longer = bestGuide == null || guide.length > bestGuide!.length;
       if (extra > bestExtra || (extra == bestExtra && longer)) {
         bestExtra = extra;
@@ -98,7 +126,7 @@ abstract final class LevelGenerator {
       final snapGuide = [...guide];
       final snapHistory = [...history];
       var parked = 0;
-      while (_emptyCount(tubes) < 2 && parked < spec.bottles) {
+      while (_emptyCount(tubes) < spec.empties && parked < spec.bottles) {
         parked++;
         final edge = _pickEdge(
           tubes,
@@ -131,6 +159,14 @@ abstract final class LevelGenerator {
       ..clear()
       ..addAll(bestGuide!);
 
+    // A different set of palette colours on every level.
+    final palette = List<int>.generate(DifficultyCurve.maxColors, (i) => i)
+      ..shuffle(rng);
+    for (final tube in tubes) {
+      for (var i = 0; i < tube.length; i++) {
+        tube[i] = palette[tube[i]];
+      }
+    }
     final board = _board(tubes, spec.capacity);
     final forward = guide.reversed.toList();
     if (!_replay(board, forward)) {

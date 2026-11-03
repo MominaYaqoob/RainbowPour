@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import 'difficulty.dart';
 import 'generator.dart';
 
 /// Cached levels. Building a board runs in a worker isolate, never on the
@@ -11,7 +12,8 @@ abstract final class LevelRepository {
   static final Map<int, Future<GeneratedLevel>> _inflight = {};
 
   static Future<GeneratedLevel> getLevel(int level) {
-    final n = level < 1 ? 1 : (level > 500 ? 500 : level);
+    final max = DifficultyCurve.maxLevel;
+    final n = level < 1 ? 1 : (level > max ? max : level);
     final cached = _cache[n];
     if (cached != null) return Future<GeneratedLevel>.value(cached);
     final pending = _inflight[n];
@@ -25,7 +27,7 @@ abstract final class LevelRepository {
   static void prefetch(int level) {
     for (var step = 1; step <= 2; step++) {
       final n = level + step;
-      if (n > 500) return;
+      if (n > DifficultyCurve.maxLevel) return;
       if (_cache.containsKey(n) || _inflight.containsKey(n)) continue;
       unawaited(
         getLevel(n).then<void>((_) {}, onError: (Object _, StackTrace _) {}),
