@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'daily_challenge.dart' as challenge;
+import 'daily_reward.dart' as reward;
 import 'save_data.dart';
 
 /// Local storage for the player's progress and settings.
@@ -142,6 +144,42 @@ abstract final class AppPrefs {
     return (completed: d.levelsCompleted, moves: d.totalMoves);
   }
 
+  /// Longest daily streak stored in the save. Read only.
+  static Future<int> bestStreak() async => (await _load()).daily.bestStreak;
+
+  /// A copy of the daily record. Changing the copy does not change the save.
+  static Future<DailyState> daily() async {
+    final src = (await _load()).daily;
+    return DailyState.fromJson(src.toJson());
+  }
+
+  /// Records [now] when the clock is fine, and returns true.
+  /// Returns false and writes nothing when the clock went backwards.
+  /// Uses [reward.recordClock], the same rule as [claimDaily].
+  static Future<bool> touchClock(DateTime now) =>
+      _update((d) => reward.recordClock(d.daily, now));
+
+  /// Claims today's reward when it is still open. Gems and the streak are
+  /// written in the same save. [DailyClaim.gems] is 0 when today was already
+  /// claimed or the clock went backwards ([DailyClaim.clockBlocked]).
+  /// [now] is the clock the caller trusts.
+  static Future<reward.DailyClaim> claimDaily(DateTime now) => _update((d) {
+    final result = reward.claimDaily(d.daily, now);
+    d.gems += result.gems;
+    return result;
+  });
+
+  /// Finishes [boardDay] if it is still [now]'s local day. Gems and the
+  /// challenge record are written in the same save.
+  static Future<challenge.ChallengeResult> completeChallenge(
+    DateTime boardDay,
+    DateTime now,
+  ) => _update((d) {
+    final result = challenge.completeChallenge(d.daily, boardDay, now);
+    d.gems += result.gems;
+    return result;
+  });
+
   // ---- gems
 
   static Future<int> gems() async => (await _load()).gems;
@@ -169,6 +207,39 @@ abstract final class AppPrefs {
     final d = await _load();
     return d.adsDay == _today() ? d.adsCount : 0;
   }
+
+  /// Gems from one watched gem ad, and how many of those ads fit in a day.
+  static const gemAdReward = 10;
+  static const gemAdDailyCap = 3;
+
+  /// Pays [gemAdReward] and counts the ad, in one save. False at the daily cap.
+  static Future<bool> watchedGemAd() => _update((d) {
+    final today = _today();
+    if (d.adsDay != today) {
+      d.adsDay = today;
+      d.adsCount = 0;
+    }
+    if (d.adsCount >= gemAdDailyCap) return false;
+    d.adsCount++;
+    d.gems += gemAdReward;
+    return true;
+  });
+
+  /// Adds today's claimed daily reward a second time. 0 if it was not claimed
+  /// today, or an ad already doubled it.
+  static Future<int> doubleDailyReward(DateTime now) => _update((d) {
+    final key = reward.dayKey(now);
+    final daily = d.daily;
+    if (daily.lastClaimDay != key || daily.rewardDoubledDay == key) return 0;
+    if (daily.streakDay < 1 ||
+        daily.streakDay > reward.dailyRewardAmounts.length) {
+      return 0;
+    }
+    final amount = reward.dailyRewardAmounts[daily.streakDay - 1];
+    daily.rewardDoubledDay = key;
+    d.gems += amount;
+    return amount;
+  });
 
   /// Counts one more watched ad and returns today's total.
   static Future<int> addAdToday() => _update((d) {

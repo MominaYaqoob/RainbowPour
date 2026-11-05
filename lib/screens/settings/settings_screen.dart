@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../ads/ad_service.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
+import '../../core/audio_service.dart';
+import '../../core/colorblind.dart';
 import '../../core/haptics.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/info_dialog.dart';
@@ -49,6 +53,29 @@ class _SettingsScreenState extends State<SettingsScreen>
     });
   }
 
+  Future<void> _adPrivacy() async {
+    try {
+      await AdService.instance.initialize().timeout(
+        AdService.consentInitializeTimeout,
+      );
+    } catch (error) {
+      if (kDebugMode) debugPrint('AdService: $error');
+    }
+    if (!mounted) return;
+    final required = await AdService.instance.privacyOptionsRequired;
+    if (!mounted) return;
+    if (required) {
+      await AdService.instance.showPrivacyOptions();
+      return;
+    }
+    await InfoDialog.show(
+      context,
+      icon: Icons.tune_rounded,
+      title: 'Ad privacy options',
+      message: 'No privacy options are needed for this device or region.',
+    );
+  }
+
   void _set(String key, bool v, void Function() apply) {
     setState(apply);
     AppPrefs.setFlag(key, v);
@@ -56,6 +83,12 @@ class _SettingsScreenState extends State<SettingsScreen>
       Haptics.enable(v);
       Haptics.light(); // feel it when switched on
     }
+    if (key == 'sound') {
+      AudioService.instance.setSound(v);
+      AudioService.instance.play(Sfx.tap); // hear it when switched on
+    }
+    if (key == 'music') AudioService.instance.setMusic(v);
+    if (key == 'colorblind') ColorblindMode.set(v);
   }
 
   @override
@@ -108,10 +141,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           ]),
           const SizedBox(height: 18),
           _section('MORE', 1, [
-            _link(Icons.language_rounded, 'Language', 'English', const [
-              Color(0xFF7FE9FF),
-              Color(0xFF1FA9FF),
-            ]),
             _link(
               Icons.star_rounded,
               'Rate Rainbow Pour',
@@ -119,10 +148,15 @@ class _SettingsScreenState extends State<SettingsScreen>
               const [Color(0xFFFFF27A), Color(0xFFFFA000)],
               onTap: () => RateUsDialog.show(context),
             ),
-            _link(Icons.tune_rounded, 'Ad privacy options', null, const [
-              Color(0xFFB98CFF),
-              Color(0xFF6B3BE0),
-            ]),
+            _link(
+              Icons.tune_rounded,
+              'Ad privacy options',
+              null,
+              const [Color(0xFFB98CFF), Color(0xFF6B3BE0)],
+              onTap: () {
+                _adPrivacy();
+              },
+            ),
             _link(Icons.lock_rounded, 'Privacy Policy', null, const [
               Color(0xFF8EF0A0),
               Color(0xFF2DBE60),

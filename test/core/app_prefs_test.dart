@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rainbow_pour/core/app_prefs.dart';
+import 'package:rainbow_pour/core/daily_reward.dart';
 import 'package:rainbow_pour/core/save_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -142,5 +143,160 @@ void main() {
     await AppPrefs.setInProgress(null);
     AppPrefs.resetForTest();
     expect(await AppPrefs.inProgress(), isNull);
+  });
+
+  test('claimDaily adds the gems once and the streak round-trips', () async {
+    SharedPreferences.setMockInitialValues({});
+    final first = DateTime(2026, 5, 2, 9);
+    final later = DateTime(2026, 5, 2, 21);
+    expect((await AppPrefs.claimDaily(first)).gems, 20);
+    expect((await AppPrefs.claimDaily(later)).gems, 0);
+    expect(await AppPrefs.gems(), 20);
+    expect((await AppPrefs.claimDaily(DateTime(2026, 5, 3, 8))).gems, 30);
+    expect(await AppPrefs.gems(), 50);
+
+    AppPrefs.resetForTest();
+    expect(await AppPrefs.gems(), 50);
+    final saved = await AppPrefs.daily();
+    expect(saved.streakDay, 2);
+    expect(saved.streakCount, 2);
+    expect(saved.lastClaimDay, '2026-5-3');
+    expect(saved.bestStreak, 2);
+
+    saved.streakCount = 99;
+    expect((await AppPrefs.daily()).streakCount, 2);
+
+    final prefs = await SharedPreferences.getInstance();
+    final decoded = SaveData.tryDecode(prefs.getString(AppPrefs.saveKey))!;
+    expect(decoded.daily.streakCount, 2);
+    expect(decoded.gems, 50);
+  });
+
+  test('an old save without streakCount loads as zero', () async {
+    SharedPreferences.setMockInitialValues({
+      AppPrefs.saveKey:
+          '{"version":1,"gems":5,"daily":{"lastClaimDay":"2026-1-2","streakDay":4,"bestStreak":4}}',
+    });
+    final saved = await AppPrefs.daily();
+    expect(saved.streakCount, 0);
+    expect(saved.streakDay, 4);
+    expect(saved.bestStreak, 4);
+    expect(await AppPrefs.gems(), 5);
+  });
+
+  test('touchClock moves forward and a rewind does not stick', () async {
+    SharedPreferences.setMockInitialValues({});
+    final now = DateTime(2026, 8, 1, 12);
+    expect(await AppPrefs.touchClock(now), isTrue);
+    AppPrefs.resetForTest();
+    expect((await AppPrefs.daily()).lastSeenMs, now.millisecondsSinceEpoch);
+
+    final behind = now.subtract(const Duration(minutes: 3));
+    expect(await AppPrefs.touchClock(behind), isFalse);
+    AppPrefs.resetForTest();
+    expect((await AppPrefs.daily()).lastSeenMs, now.millisecondsSinceEpoch);
+
+    final ahead = now.add(const Duration(minutes: 10));
+    expect(await AppPrefs.touchClock(ahead), isTrue);
+    expect((await AppPrefs.daily()).lastSeenMs, ahead.millisecondsSinceEpoch);
+  });
+
+  test('claimDaily adds no gems when the clock went back', () async {
+    SharedPreferences.setMockInitialValues({});
+    final now = DateTime(2026, 8, 2, 12);
+    expect(await AppPrefs.touchClock(now), isTrue);
+    final claim = await AppPrefs.claimDaily(
+      now.subtract(const Duration(days: 1)),
+    );
+    expect(claim.gems, 0);
+    expect(claim.clockBlocked, isTrue);
+    expect(await AppPrefs.gems(), 0);
+    AppPrefs.resetForTest();
+    final saved = await AppPrefs.daily();
+    expect(saved.lastSeenMs, now.millisecondsSinceEpoch);
+    expect(saved.streakDay, 0);
+    expect(saved.lastClaimDay, isNull);
+  });
+
+  test('completeChallenge adds the gems in the same save', () async {
+    SharedPreferences.setMockInitialValues({});
+    final day = DateTime(2026, 6, 15, 9);
+    final result = await AppPrefs.completeChallenge(day, day);
+    expect(result.gems, 30);
+    expect(result.streak, 1);
+    expect(await AppPrefs.gems(), 30);
+
+    AppPrefs.resetForTest();
+    final saved = await AppPrefs.daily();
+    expect(saved.challengeDone, {dayKey(day)});
+    expect(saved.challengeStreak, 1);
+    expect(saved.weeklyBonusWeek, isNull);
+    expect(await AppPrefs.gems(), 30);
+
+    final again = await AppPrefs.completeChallenge(
+      day,
+      DateTime(2026, 6, 15, 21),
+    );
+    expect(again.alreadyDone, isTrue);
+    expect(again.gems, 0);
+    expect(await AppPrefs.gems(), 30);
+
+    final prefs = await SharedPreferences.getInstance();
+    final decoded = SaveData.tryDecode(prefs.getString(AppPrefs.saveKey))!;
+    expect(decoded.daily.weeklyBonusWeek, isNull);
+    expect(decoded.gems, 30);
+    expect(decoded.daily.challengeDone, {dayKey(day)});
+  });
+
+  test('an old save without weeklyBonusWeek loads', () async {
+    SharedPreferences.setMockInitialValues({
+      AppPrefs.saveKey:
+          '{"version":1,"gems":4,"daily":{"challengeStreak":2,"challengeDone":["2026-6-14"]}}',
+    });
+    final saved = await AppPrefs.daily();
+    expect(saved.weeklyBonusWeek, isNull);
+    expect(saved.rewardDoubledDay, isNull);
+    expect(saved.challengeStreak, 2);
+    expect(saved.challengeDone, {'2026-6-14'});
+    expect(await AppPrefs.gems(), 4);
+  });
+
+  test('watchedGemAd pays 10 gems three times, then the next day', () async {
+    SharedPreferences.setMockInitialValues({});
+    for (var i = 0; i < 3; i++) {
+      expect(await AppPrefs.watchedGemAd(), isTrue);
+    }
+    expect(await AppPrefs.watchedGemAd(), isFalse);
+    expect(await AppPrefs.adsToday(), 3);
+    expect(await AppPrefs.gems(), 30);
+
+    final prefs = await SharedPreferences.getInstance();
+    final saved = SaveData.tryDecode(prefs.getString(AppPrefs.saveKey))!;
+    saved.adsDay = '1999-1-1';
+    await prefs.setString(AppPrefs.saveKey, saved.encode());
+    AppPrefs.resetForTest();
+
+    expect(await AppPrefs.adsToday(), 0);
+    expect(await AppPrefs.watchedGemAd(), isTrue);
+    expect(await AppPrefs.adsToday(), 1);
+    expect(await AppPrefs.gems(), 40);
+  });
+
+  test('doubleDailyReward pays once and survives a reload', () async {
+    SharedPreferences.setMockInitialValues({});
+    final now = DateTime(2026, 6, 15, 10);
+    expect(await AppPrefs.doubleDailyReward(now), 0);
+
+    expect((await AppPrefs.claimDaily(now)).gems, 20);
+    expect(await AppPrefs.doubleDailyReward(now), 20);
+    expect(await AppPrefs.gems(), 40);
+    expect(await AppPrefs.doubleDailyReward(now), 0);
+    expect(await AppPrefs.gems(), 40);
+
+    AppPrefs.resetForTest();
+    final saved = await AppPrefs.daily();
+    expect(saved.rewardDoubledDay, dayKey(now));
+    expect(await AppPrefs.gems(), 40);
+    expect(await AppPrefs.doubleDailyReward(now), 0);
   });
 }

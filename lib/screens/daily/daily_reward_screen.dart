@@ -3,16 +3,23 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../ads/ad_widgets.dart';
+import '../../ads/rewarded_flow.dart';
 import '../../core/app_colors.dart';
+import '../../core/app_prefs.dart';
+import '../../core/daily_reward.dart';
 import '../../widgets/entrance.dart';
+import '../../widgets/info_dialog.dart';
 import '../../widgets/gem_icon.dart';
-import '../../widgets/native_ad_placeholder.dart';
 import '../../widgets/page_shell.dart';
 import '../../widgets/water_button.dart';
 
-/// 7-day reward calendar. UI demo: days 1-2 are claimed, day 3 is today.
+/// 7-day reward calendar. The streak and the claim come from the save.
 class DailyRewardScreen extends StatefulWidget {
-  const DailyRewardScreen({super.key});
+  const DailyRewardScreen({super.key, this.clock});
+
+  /// Clock for the claim. Tests pass a fixed time; the app uses [DateTime.now].
+  final DateTime Function()? clock;
 
   @override
   State<DailyRewardScreen> createState() => _DailyRewardScreenState();
@@ -29,9 +36,90 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
     duration: const Duration(seconds: 3),
   )..repeat();
 
-  static const _amounts = [20, 30, 40, 50, 60, 80, 150];
-  static const _today = 2; // index of today's day
-  bool _claimed = false;
+  DailyStatus _status = const DailyStatus(
+    claimedToday: false,
+    nextRewardDay: 1,
+    displayStreakCount: 0,
+  );
+  int _gems = 0;
+  bool _ready = false;
+  bool _busy = false;
+  bool _clockBlocked = false;
+  bool _doubled = false;
+
+  DateTime _now() => widget.clock?.call() ?? DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _open();
+  }
+
+  Future<void> _open() async {
+    final ok = await AppPrefs.touchClock(_now());
+    if (!mounted) return;
+    if (!ok) {
+      setState(() => _clockBlocked = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        InfoDialog.clockChanged(context);
+      });
+    }
+    await _load();
+  }
+
+  Future<void> _load() async {
+    final now = _now();
+    final savedFuture = AppPrefs.daily();
+    final gemsFuture = AppPrefs.gems();
+    final saved = await savedFuture;
+    final gems = await gemsFuture;
+    if (!mounted) return;
+    setState(() {
+      _status = dailyStatus(saved, now);
+      _gems = gems;
+      _doubled = saved.rewardDoubledDay == dayKey(now);
+      _ready = true;
+    });
+  }
+
+  Future<void> _claim() async {
+    if (_busy || !_ready || _clockBlocked || _status.claimedToday) return;
+    setState(() => _busy = true);
+    final result = await AppPrefs.claimDaily(_now());
+    if (!mounted) return;
+    if (result.clockBlocked) {
+      setState(() {
+        _clockBlocked = true;
+        _busy = false;
+      });
+      InfoDialog.clockChanged(context);
+      return;
+    }
+    await _load();
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
+
+  Future<void> _double() async {
+    if (_busy ||
+        !_ready ||
+        _clockBlocked ||
+        !_status.claimedToday ||
+        _doubled) {
+      return;
+    }
+    setState(() => _busy = true);
+    await RewardedFlow.run(
+      context,
+      onReward: () async {
+        final added = await AppPrefs.doubleDailyReward(_now());
+        if (added > 0) await _load();
+      },
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
 
   @override
   void dispose() {
@@ -46,8 +134,13 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
     final gridW = math.min(size.width - 40, 380.0);
     const gap = 10.0;
     final cell = (gridW - gap * 3) / 4;
+    final claimed = _ready && _status.claimedToday;
+    final held = claimed || _busy || _clockBlocked;
+    final canDouble = claimed && !_doubled && !_clockBlocked && !_busy;
+    final amount = dailyRewardAmounts[_status.nextRewardDay - 1];
     return PageShell(
       title: 'Daily Reward',
+      gems: _ready ? _gems : null,
       child: SingleChildScrollView(
         padding: const EdgeInsets.only(bottom: 18),
         child: Column(
@@ -91,20 +184,24 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
               child: AnimatedBuilder(
                 animation: _loop,
                 builder: (context, child) => Transform.scale(
-                  scale: _claimed
+                  scale: held
                       ? 1
                       : 1 + 0.025 * math.sin(2 * math.pi * _loop.value),
                   child: child,
                 ),
                 child: WaterButton(
                   width: math.min(size.width - 56, 300),
-                  label: _claimed ? 'Claimed' : 'Claim +${_amounts[_today]}',
-                  icon: _claimed
+                  label: claimed ? 'Claimed' : 'Claim +$amount',
+                  icon: claimed
                       ? Icons.check_rounded
                       : Icons.card_giftcard_rounded,
-                  dim: _claimed,
+                  dim: held || !_ready,
                   onPressed: () {
-                    if (!_claimed) setState(() => _claimed = true);
+                    if (_clockBlocked) {
+                      InfoDialog.clockChanged(context);
+                      return;
+                    }
+                    _claim();
                   },
                 ),
               ),
@@ -115,38 +212,45 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
               begin: 0.7,
               end: 1,
               child: GestureDetector(
-                onTap: () => showSoon(context, 'Rewarded ads'),
+                onTap: () {
+                  _double();
+                },
                 behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AppColors.gold.withValues(alpha: 0.8),
+                child: Opacity(
+                  opacity: canDouble ? 1 : 0.45,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 9,
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.play_circle_fill_rounded,
-                        size: 18,
-                        color: AppColors.gold,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.gold.withValues(alpha: 0.8),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Watch an ad for 2x',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _doubled
+                              ? Icons.check_rounded
+                              : Icons.play_circle_fill_rounded,
+                          size: 18,
+                          color: AppColors.gold,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Text(
+                          _doubled ? 'Doubled' : 'Watch an ad for 2x',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -156,7 +260,7 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
               progress: _in,
               begin: 0.8,
               end: 1,
-              child: NativeAdPlaceholder(width: gridW),
+              child: NativeAdCard(width: gridW),
             ),
           ],
         ),
@@ -195,7 +299,9 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '3-day streak',
+                _status.displayStreakCount == 0
+                    ? 'Start your streak!'
+                    : '${_status.displayStreakCount}-day streak',
                 style: GoogleFonts.outfit(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
@@ -203,7 +309,9 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
                 ),
               ),
               Text(
-                'Come back every day for bigger rewards.',
+                _ready && _status.claimedToday
+                    ? 'Come back tomorrow'
+                    : 'Come back every day for bigger rewards.',
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -217,6 +325,16 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
     ),
   );
 
+  bool _tileDone(int day) {
+    if (!_status.claimedToday) return day < _status.nextRewardDay;
+    // Day 7 was claimed today, so the finished week stays checked until tomorrow.
+    if (_status.nextRewardDay == 1) return true;
+    return day < _status.nextRewardDay;
+  }
+
+  bool _tileToday(int day) =>
+      !_status.claimedToday && day == _status.nextRewardDay;
+
   Widget _entranceTile(int i, double w, double h) {
     final a = 0.15 + i * 0.07;
     return Entrance(
@@ -229,8 +347,9 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
   }
 
   Widget _tile(int i, double w, double h) {
-    final done = i < _today || (i == _today && _claimed);
-    final today = i == _today && !_claimed;
+    final day = i + 1;
+    final done = _ready && _tileDone(day);
+    final today = _ready && _tileToday(day);
     final big = i == 6;
     return AnimatedBuilder(
       animation: _loop,
@@ -302,7 +421,7 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
                         GemIcon(size: w * 0.34),
                       const SizedBox(height: 3),
                       Text(
-                        '${_amounts[i]}',
+                        '${dailyRewardAmounts[i]}',
                         style: GoogleFonts.outfit(
                           fontSize: big ? 18 : 15,
                           fontWeight: FontWeight.w800,

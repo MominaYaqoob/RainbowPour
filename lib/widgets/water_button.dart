@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../core/anim.dart';
 import '../core/app_colors.dart';
+import '../core/audio_service.dart';
 
 /// Primary button made of water: aqua gel body, two drifting waves, rising
 /// bubbles, a glossy top highlight and a shine that sweeps across. Presses
@@ -62,7 +63,10 @@ class _WaterButtonState extends State<WaterButton>
         onTapDown: (_) => _set(true),
         onTapCancel: () => _set(false),
         onTapUp: (_) => _set(false),
-        onTap: widget.onPressed,
+        onTap: () {
+          AudioService.instance.play(Sfx.tap);
+          widget.onPressed();
+        },
         child: AnimatedScale(
           scale: _down ? 0.96 : 1,
           duration: const Duration(milliseconds: 110),

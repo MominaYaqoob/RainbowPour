@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/app_colors.dart';
+import '../core/colorblind.dart';
 import 'bottle_shape.dart';
+import 'liquid_symbols.dart';
 
 /// Cone beaker (no cork) drawn with layered, shaded liquid. Layers are listed
 /// bottom to top as color ids (see [AppColors.liquid]).
@@ -25,7 +27,12 @@ class ConeBottle extends StatelessWidget {
     this.topLayerFraction = 1,
     this.shape = BottleShape.cone,
     this.capacity = 4,
+    this.symbols,
   });
+
+  /// Draw a symbol on every liquid layer. Null follows the Colorblind mode
+  /// switch in Settings ([ColorblindMode]).
+  final bool? symbols;
 
   final List<int> layers;
   final double width;
@@ -49,6 +56,15 @@ class ConeBottle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fixed = symbols;
+    if (fixed != null) return _bottle(fixed);
+    return ValueListenableBuilder<bool>(
+      valueListenable: ColorblindMode.enabled,
+      builder: (context, on, _) => _bottle(on),
+    );
+  }
+
+  Widget _bottle(bool withSymbols) {
     return CustomPaint(
       size: Size(width, width * 118 / 36),
       painter: _ConeBottlePainter(
@@ -60,6 +76,7 @@ class ConeBottle extends StatelessWidget {
         topLayerFraction,
         shape,
         capacity,
+        withSymbols,
       ),
     );
   }
@@ -75,8 +92,10 @@ class _ConeBottlePainter extends CustomPainter {
     this.topFraction,
     this.shape,
     this.capacity,
+    this.symbols,
   );
 
+  final bool symbols;
   final List<int> layers;
   final int? extraColor;
   final double extra;
@@ -102,6 +121,29 @@ class _ConeBottlePainter extends CustomPainter {
             Color.lerp(c, Colors.black, 0.1)!,
           ],
         ).createShader(nominal);
+
+  /// Colorblind mode: the symbol of [colorId] centred in the liquid band
+  /// from [top] to [bottom] (bottle units). Skipped while the band is less
+  /// than 60% of a layer, or when it would be under about 5.5 px on screen.
+  /// A bottle that is tilted for a pour draws no symbols while it moves.
+  void _symbol(
+    Canvas canvas,
+    Size size,
+    int colorId,
+    double top,
+    double bottom,
+  ) {
+    final band = bottom - top;
+    if (band < lh * 0.6) return;
+    final symbolSize = lh * 0.7;
+    if (symbolSize * size.width / 36 < 5.5) return;
+    LiquidSymbols.paint(
+      canvas,
+      colorId,
+      Offset(18, (top + bottom) / 2),
+      symbolSize,
+    );
+  }
 
   void _rotateAbout(Canvas canvas, double angle) {
     canvas.translate(_pivot.dx, _pivot.dy);
@@ -157,6 +199,9 @@ class _ConeBottlePainter extends CustomPainter {
               Paint()..color = Colors.white.withValues(alpha: 0.3),
             );
           }
+          if (symbols) {
+            _symbol(canvas, size, layers[i], y, nominal.bottom);
+          }
           top = y;
         }
       }
@@ -167,6 +212,7 @@ class _ConeBottlePainter extends CustomPainter {
           Rect.fromLTRB(-wide, top - h, 36 + wide, top + 0.6),
           _liquid(nominal, AppColors.liquid[extraColor!]),
         );
+        if (symbols) _symbol(canvas, size, extraColor!, top - h, top);
         top -= h;
       }
       final hasLiquid = layers.isNotEmpty || (extraColor != null && extra > 0);
@@ -423,5 +469,6 @@ class _ConeBottlePainter extends CustomPainter {
       old.topFraction != topFraction ||
       old.shape != shape ||
       old.capacity != capacity ||
+      old.symbols != symbols ||
       old.layers != layers;
 }

@@ -13,8 +13,25 @@ import '../../widgets/page_shell.dart';
 import '../../widgets/water_button.dart';
 import 'stats_screen.dart';
 
-/// Player profile: avatar, nickname, a few numbers and the avatar picker.
-/// The numbers are sample data until the real game saves progress.
+/// Groups [n] with commas so a long counter stays one short line.
+String _formatCount(int n) {
+  final value = n < 0 ? 0 : n;
+  if (value < 100000) {
+    return value.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
+  }
+  if (value < 1000000) return '${_compact(value / 1000)}K';
+  return '${_compact(value / 1000000)}M';
+}
+
+String _compact(double v) {
+  final text = v.toStringAsFixed(v >= 100 ? 0 : 1);
+  return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+}
+
+/// Player profile: avatar, nickname, saved progress and the avatar picker.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -32,6 +49,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   String _name = 'Player';
   int _avatar = 0;
   int _level = 1;
+  int _completed = 0;
+  int _stars = 0;
+  int _bestStreak = 0;
 
   @override
   void initState() {
@@ -40,14 +60,26 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _load() async {
-    final name = await AppPrefs.nickname();
-    final avatar = await AppPrefs.avatar();
-    final level = await AppPrefs.level();
+    final nameFuture = AppPrefs.nickname();
+    final avatarFuture = AppPrefs.avatar();
+    final levelFuture = AppPrefs.level();
+    final totalsFuture = AppPrefs.totals();
+    final starsFuture = AppPrefs.stars();
+    final streakFuture = AppPrefs.bestStreak();
+    final name = await nameFuture;
+    final avatar = await avatarFuture;
+    final level = await levelFuture;
+    final totals = await totalsFuture;
+    final stars = await starsFuture;
+    final streak = await streakFuture;
     if (!mounted) return;
     setState(() {
       _name = name ?? 'Player';
       _avatar = avatar;
       _level = level;
+      _completed = totals.completed;
+      _stars = stars.values.fold(0, (sum, n) => sum + n);
+      _bestStreak = streak;
     });
   }
 
@@ -175,11 +207,19 @@ class _ProfileScreenState extends State<ProfileScreen>
             end: 0.6,
             child: Row(
               children: [
-                _stat(Icons.emoji_events_rounded, '24', 'Levels'),
+                _stat(
+                  Icons.emoji_events_rounded,
+                  _formatCount(_completed),
+                  'Levels',
+                ),
                 const SizedBox(width: 10),
-                _stat(Icons.star_rounded, '63', 'Stars'),
+                _stat(Icons.star_rounded, _formatCount(_stars), 'Stars'),
                 const SizedBox(width: 10),
-                _stat(Icons.local_fire_department_rounded, '5', 'Best streak'),
+                _stat(
+                  Icons.local_fire_department_rounded,
+                  _formatCount(_bestStreak),
+                  'Best streak',
+                ),
               ],
             ),
           ),
@@ -276,6 +316,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 4),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.outfit(
               fontSize: 22,
               fontWeight: FontWeight.w800,

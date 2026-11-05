@@ -4,6 +4,13 @@
         android:label="Rainbow Pour"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- AdMob app id. Must match AdConfig.appId in lib/ads/ad_config.dart.
+             This is Google's TEST app id. Replace it with the real app id
+             before release. The SDK reads this before Dart starts, so the
+             value cannot live only in ad_config.dart. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

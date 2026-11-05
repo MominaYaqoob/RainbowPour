@@ -209,23 +209,38 @@ class DailyState {
 
   /// Reward day reached, 0 to 7 (the claim of day 7 starts again at 1).
   int streakDay = 0;
+
+  /// Consecutive days claimed with no gap. Keeps growing after day 7.
+  int streakCount = 0;
   int bestStreak = 0;
 
   /// The latest device time seen (milliseconds since epoch). If the clock
-  /// goes behind this, daily claims are blocked.
+  /// goes more than two minutes behind this, daily claims are blocked.
+  ///
+  /// The value only moves forward. A clock jumped far ahead stays the mark,
+  /// so returning to the real time stays blocked until real time catches up.
   int lastSeenMs = 0;
 
   /// Days (`yyyy-m-d`) the daily challenge was completed.
   Set<String> challengeDone = {};
   int challengeStreak = 0;
 
+  /// Monday (`yyyy-m-d`) of the week whose 7-day bonus was already paid.
+  String? weeklyBonusWeek;
+
+  /// Local day (`yyyy-m-d`) whose claimed reward was already doubled by an ad.
+  String? rewardDoubledDay;
+
   Map<String, Object?> toJson() => {
     'lastClaimDay': lastClaimDay,
     'streakDay': streakDay,
+    'streakCount': streakCount,
     'bestStreak': bestStreak,
     'lastSeenMs': lastSeenMs,
     'challengeDone': challengeDone.toList()..sort(),
     'challengeStreak': challengeStreak,
+    'weeklyBonusWeek': weeklyBonusWeek,
+    'rewardDoubledDay': rewardDoubledDay,
   };
 
   factory DailyState.fromJson(Map<String, Object?> json) {
@@ -234,6 +249,7 @@ class DailyState {
         ? json['lastClaimDay'] as String
         : null;
     d.streakDay = SaveData._int(json['streakDay'], 0);
+    d.streakCount = SaveData._int(json['streakCount'], 0);
     d.bestStreak = SaveData._int(json['bestStreak'], 0);
     d.lastSeenMs = SaveData._int(json['lastSeenMs'], 0);
     d.challengeDone = {
@@ -242,6 +258,12 @@ class DailyState {
           if (v is String) v,
     };
     d.challengeStreak = SaveData._int(json['challengeStreak'], 0);
+    d.weeklyBonusWeek = json['weeklyBonusWeek'] is String
+        ? json['weeklyBonusWeek'] as String
+        : null;
+    d.rewardDoubledDay = json['rewardDoubledDay'] is String
+        ? json['rewardDoubledDay'] as String
+        : null;
     return d;
   }
 }

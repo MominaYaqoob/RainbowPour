@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../ads/ad_widgets.dart';
 import '../../core/anim.dart';
+import '../../core/audio_service.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
 import '../../widgets/avatar_face.dart';
@@ -53,6 +55,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _load();
+    // Background music begins when Home first shows and keeps playing.
+    AudioService.instance.startMusic();
   }
 
   Future<void> _load() async {
@@ -189,6 +193,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 SizedBox(height: size.height * 0.012),
+                // banner: empty until ads are allowed, never on the game screen
+                const BannerAdSlot(),
               ],
             ),
           ),

@@ -38,7 +38,7 @@ class UndoCredits {
     return false;
   }
 
-  /// The extra-undo dialog offers 3 more. The ad itself is still a stub.
+  /// Three more undos after a rewarded ad's user-earned callback.
   void grantWatchedAd() => bonus += 3;
 }
 

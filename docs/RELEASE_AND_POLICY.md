@@ -20,6 +20,8 @@ Policies change often. Re-read the live Google Play Developer Policy Center befo
 - Signing: create an **upload keystore** (`keytool -genkey ... -keystore upload-keystore.jks`), store it OUTSIDE git with its passwords in 2 safe places. Losing it blocks updates (Play App Signing can reset it, but do not rely on it). Reference it from `android/key.properties` (git-ignored) in `android/app/build.gradle.kts`.
 - Build: `flutter build appbundle --release`. Test the same code with `flutter build apk --release --split-per-abi` on real phones.
 - Permissions allowed in manifest: `INTERNET`, `ACCESS_NETWORK_STATE`, `com.google.android.gms.permission.AD_ID`. Remove everything else. No storage/camera/location/contacts.
+- AdMob ids live only in `lib/ads/ad_config.dart` (`useTestIds`). The manifest `APPLICATION_ID` repeats the test app id because the SDK reads it before Dart; replace that value and set `useTestIds = false` with the real ids before release. An empty real id must not fall back to a test id.
+- Consent: Google UMP runs before `MobileAds.initialize`. No ad is requested until `canRequestAds`. Age 13+: max ad content rating T, not child-directed. Personalised ads follow the UMP choice only. Web and non-Android builds skip the SDK.
 - Remove: Device Preview, debug banners, demo triggers (Level pill / Undo shortcuts), `kDebugMode` shortcuts, test ad IDs, `web/` folder.
 - Replace runtime Google Fonts download with bundled Outfit font (offline first launch).
 - Obfuscation optional: `--obfuscate --split-debug-info=build/symbols` (keep symbols for Crashlytics).

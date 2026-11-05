@@ -49,6 +49,18 @@ abstract final class DifficultyCurve {
   /// Most colours on one level (the palette has this many).
   static const maxColors = 20;
 
+  /// Daily challenge size. The date seed picks a count inside this range.
+  static const challengeMinBottles = 25;
+  static const challengeMaxBottles = 28;
+
+  /// Most bottles the board layout is built for. One extra bottle (the
+  /// in-game +bottle button) still has to fit past this.
+  static const challengeLayoutMaxBottles = 30;
+
+  /// [LevelSpec.level] for a daily challenge. Not a campaign level: 0 is
+  /// outside 1..[maxLevel], so [specFor] rejects it and [isTutorial] is false.
+  static const challengeLevel = 0;
+
   static LevelSpec specFor(int level) {
     if (level < 1 || level > maxLevel) {
       throw ArgumentError.value(level, 'level', 'expected 1..$maxLevel');
@@ -105,21 +117,68 @@ abstract final class DifficultyCurve {
     return n % 3 == 0 ? 4 : 5;
   }
 
+  /// Today's challenge. Same calendar day always returns the same spec.
+  ///
+  /// [day] is a local date: only year, month and day are used
+  /// (`yyyyMMdd`, so 2026-11-05 is seed 20261105). Bottles and empty bottles
+  /// come from that seed. Colours follow the same cap as [specFor]: at most
+  /// [maxColors], and no colour fills more than two bottles. Scramble and par
+  /// use the level-[maxLevel] profile, because [parFloor] itself only accepts
+  /// levels 1..[maxLevel].
+  static LevelSpec challengeSpecFor(DateTime day) {
+    final seed = challengeSeed(day);
+    final rng = math.Random(seed);
+    final span = challengeMaxBottles - challengeMinBottles;
+    final bottles = challengeMinBottles + rng.nextInt(span + 1);
+    final empties = 2 + rng.nextInt(2);
+    final full = bottles - empties;
+    // Same cap as specFor: at most two bottles of one colour, at most 20.
+    var colors = maxColors;
+    colors = math.min(maxColors, math.max(colors, (full + 1) ~/ 2));
+    colors = math.min(colors, full);
+    return LevelSpec(
+      level: challengeLevel,
+      colors: colors,
+      capacity: 4,
+      bottles: bottles,
+      empties: empties,
+      duplicates: full - colors,
+      backgroundIndex: seed % 6,
+    );
+  }
+
+  /// Local calendar day as `yyyyMMdd` (2026-11-05 becomes 20261105).
+  static int challengeSeed(DateTime day) =>
+      day.year * 10000 + day.month * 100 + day.day;
+
   /// How many single-layer reverse pours scramble a level: a few on the
-  /// early levels, many by level 100.
+  /// early levels, many by level 100. A challenge spec uses level [maxLevel].
   static int scrambleSteps(LevelSpec spec) {
-    final t = math.min(1.0, math.max(0, spec.level - 2) / 98);
+    final level = _ratedLevel(spec);
+    final t = math.min(1.0, math.max(0, level - 2) / 98);
     final steps = (spec.fullBottles * (2.5 + 7.5 * t)).round();
-    return math.max(steps, parFloor(spec.level) + 2);
+    return math.max(steps, parFloorOf(spec) + 2);
   }
 
   /// Shortest par we will publish: about 1.6 pours per full bottle, a little
-  /// more as the levels go on.
-  static int parFloor(int level) {
-    final spec = specFor(level);
+  /// more as the levels go on. Throws outside 1..[maxLevel], same as [specFor].
+  static int parFloor(int level) => parFloorOf(specFor(level));
+
+  /// [parFloor] for a spec the caller already has. Levels 1..[maxLevel] get
+  /// the same number as [parFloor]. A challenge spec is rated like level
+  /// [maxLevel] so the call does not go back through [specFor].
+  static int parFloorOf(LevelSpec spec) {
+    final level = _ratedLevel(spec);
     const span = maxLevel - 1;
     final grown = (spec.colors * (level - 1)) ~/ (3 * span);
     return (spec.fullBottles * 16 + 5) ~/ 10 + grown;
+  }
+
+  /// Campaign level, or [maxLevel] when [spec] is a daily challenge.
+  static int _ratedLevel(LevelSpec spec) {
+    final level = spec.level;
+    if (level >= 1 && level <= maxLevel) return level;
+    return maxLevel;
   }
 
   /// Rounded linear step from [c0] at [n0] to [c1] at [n1].

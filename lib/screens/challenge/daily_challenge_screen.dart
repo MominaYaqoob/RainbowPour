@@ -5,6 +5,11 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/anim.dart';
 import '../../core/app_colors.dart';
+import '../../core/app_prefs.dart';
+import '../../core/daily_challenge.dart';
+import '../../core/daily_reward.dart';
+import '../../game/difficulty.dart';
+import '../../widgets/info_dialog.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/gem_icon.dart';
@@ -12,11 +17,13 @@ import '../../widgets/page_shell.dart';
 import '../../widgets/water_button.dart';
 import '../game/game_screen.dart';
 
-/// Daily challenge (UI only): today's puzzle card, a month calendar with the
-/// finished days ticked off, and a weekly bonus. The finished days are sample
-/// data until progress is saved.
+/// Daily challenge. Play opens today's board. The calendar and the streak
+/// come from the save.
 class DailyChallengeScreen extends StatefulWidget {
-  const DailyChallengeScreen({super.key});
+  const DailyChallengeScreen({super.key, this.clock});
+
+  /// Clock for "today". Tests pass a fixed time; the app uses [DateTime.now].
+  final DateTime Function()? clock;
 
   @override
   State<DailyChallengeScreen> createState() => _DailyChallengeScreenState();
@@ -49,7 +56,59 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
   ];
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  final DateTime _now = DateTime.now();
+  DateTime _today = DateTime.now();
+  Set<String> _doneDays = {};
+  int _streak = 0;
+  int _weekCount = 0;
+  int _gems = 0;
+  bool _ready = false;
+  bool _clockBlocked = false;
+
+  DateTime _now() => widget.clock?.call() ?? DateTime.now();
+
+  bool get _doneToday => _doneDays.contains(dayKey(_today));
+
+  @override
+  void initState() {
+    super.initState();
+    final now = _now();
+    _today = DateTime(now.year, now.month, now.day);
+    _load();
+  }
+
+  Future<void> _load() async {
+    final now = _now();
+    final savedFuture = AppPrefs.daily();
+    final gemsFuture = AppPrefs.gems();
+    final saved = await savedFuture;
+    final gems = await gemsFuture;
+    if (!mounted) return;
+    final today = DateTime(now.year, now.month, now.day);
+    setState(() {
+      _today = today;
+      _doneDays = saved.challengeDone;
+      _streak = challengeStreakOf(saved.challengeDone, today);
+      _weekCount = weekDays(
+        today,
+      ).where((date) => saved.challengeDone.contains(dayKey(date))).length;
+      _gems = gems;
+      _clockBlocked = clockWentBack(saved.lastSeenMs, now);
+      _ready = true;
+    });
+  }
+
+  Future<void> _play() async {
+    if (!_ready) return;
+    if (_clockBlocked) {
+      InfoDialog.clockChanged(context);
+      return;
+    }
+    if (_doneToday) return;
+    await Navigator.of(
+      context,
+    ).push(fadeRoute(GameScreen.challenge(day: _today), zoom: true));
+    if (mounted) await _load();
+  }
 
   @override
   void dispose() {
@@ -58,24 +117,12 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
     super.dispose();
   }
 
-  /// Sample: every earlier day is done except two missed ones.
-  bool _done(int day) => day < _now.day && day % 7 != 3 && day % 11 != 5;
-
-  int get _doneThisWeek {
-    var n = 0;
-    final monday = _now.subtract(Duration(days: _now.weekday - 1));
-    for (var i = 0; i < _now.weekday - 1; i++) {
-      final d = monday.add(Duration(days: i));
-      if (d.month == _now.month && _done(d.day)) n++;
-    }
-    return n;
-  }
-
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     return PageShell(
       title: 'Daily Challenge',
+      gems: _ready ? _gems : null,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
         children: [
@@ -90,6 +137,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
   }
 
   Widget _todayCard(Size size) {
+    final spec = DifficultyCurve.challengeSpecFor(_today);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       decoration: BoxDecoration(
@@ -127,7 +175,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${_weekdays[_now.weekday - 1]}, ${_now.day} ${_months[_now.month - 1]}',
+                      '${_weekdays[_today.weekday - 1]}, ${_today.day} ${_months[_today.month - 1]}',
                       style: GoogleFonts.outfit(
                         fontSize: 21,
                         fontWeight: FontWeight.w800,
@@ -140,7 +188,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
                         _chip('HARD', const Color(0xFFFF3D5A), Colors.white),
                         const SizedBox(width: 8),
                         _chip(
-                          '10 colors',
+                          '${spec.colors} colors',
                           Colors.white.withValues(alpha: 0.18),
                           Colors.white,
                         ),
@@ -190,7 +238,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
                 const GemIcon(size: 22),
                 const SizedBox(width: 5),
                 Text(
-                  '50',
+                  '$challengeRewardGems',
                   style: GoogleFonts.outfit(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -204,7 +252,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
                   color: Color(0xFFFF7A1C),
                 ),
                 Text(
-                  ' +1 streak',
+                  '$_streak-day streak',
                   style: GoogleFonts.outfit(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -217,11 +265,12 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
           const SizedBox(height: 14),
           WaterButton(
             width: math.min(size.width - 80, 270),
-            label: 'Play',
-            icon: Icons.play_arrow_rounded,
-            onPressed: () => Navigator.of(
-              context,
-            ).push(fadeRoute(const GameScreen(), zoom: true)),
+            label: _doneToday ? 'Done for today' : 'Play',
+            icon: _doneToday ? Icons.check_rounded : Icons.play_arrow_rounded,
+            dim: !_ready || _doneToday || _clockBlocked,
+            onPressed: () {
+              _play();
+            },
           ),
         ],
       ),
@@ -246,7 +295,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
   );
 
   Widget _weekBonus() {
-    final n = _doneThisWeek.clamp(0, 6);
+    final n = _weekCount;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
@@ -287,7 +336,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Weekly bonus: 150 gems',
+                  'Weekly bonus: $weeklyBonusGems gems',
                   style: GoogleFonts.outfit(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
@@ -330,8 +379,8 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
   }
 
   Widget _calendar() {
-    final first = DateTime(_now.year, _now.month, 1);
-    final days = DateTime(_now.year, _now.month + 1, 0).day;
+    final first = DateTime(_today.year, _today.month, 1);
+    final days = DateTime(_today.year, _today.month + 1, 0).day;
     final lead = first.weekday - 1; // empty cells before day 1
     final cells = lead + days;
     final rows = (cells / 7).ceil();
@@ -349,7 +398,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
       child: Column(
         children: [
           Text(
-            '${_months[_now.month - 1]} ${_now.year}',
+            '${_months[_today.month - 1]} ${_today.year}',
             style: GoogleFonts.outfit(
               fontSize: 17,
               fontWeight: FontWeight.w800,
@@ -392,9 +441,11 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
 
   Widget _cell(int day, int days) {
     if (day < 1 || day > days) return const SizedBox(height: 38);
-    final today = day == _now.day;
-    final done = _done(day);
-    final past = day < _now.day;
+    final today = day == _today.day;
+    final done = _doneDays.contains(
+      dayKey(DateTime(_today.year, _today.month, day)),
+    );
+    final past = day < _today.day;
     Widget inner;
     if (done) {
       inner = Container(

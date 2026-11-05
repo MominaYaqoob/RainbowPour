@@ -32,7 +32,7 @@ class GeneratedLevel {
 /// Reverse pours run for up to N = 60 + 12*colours steps. Burying a run
 /// freezes it, so a shuffle usually stops before N; what remains is still
 /// far longer than the old colours+2 cutoff. The fast solver then checks
-/// the board. A line shorter than [DifficultyCurve.parFloor] is rejected
+/// the board. A line shorter than [DifficultyCurve.parFloorOf] is rejected
 /// and the next seed is tried. If the solver cannot finish, the checked
 /// reverse-shuffle line is the solution and its length is par.
 abstract final class LevelGenerator {
@@ -42,6 +42,20 @@ abstract final class LevelGenerator {
     return _cache.putIfAbsent(level, () {
       final spec = DifficultyCurve.specFor(level);
       return generate(spec, level * 7919 + 13);
+    });
+  }
+
+  /// How many seeds a daily challenge may try. Big boards miss the par floor
+  /// more often than campaign levels; the checks themselves stay the same.
+  static const challengeAttempts = 48;
+
+  /// One board for [day], cached by its `yyyyMMdd` seed. The solution replays
+  /// to a win, same as [forLevel].
+  static GeneratedLevel forChallenge(DateTime day) {
+    final seed = DifficultyCurve.challengeSeed(day);
+    return _cache.putIfAbsent(seed, () {
+      final spec = DifficultyCurve.challengeSpecFor(day);
+      return generate(spec, seed, attempts: challengeAttempts);
     });
   }
 
@@ -67,9 +81,13 @@ abstract final class LevelGenerator {
     );
   }
 
-  static GeneratedLevel generate(LevelSpec spec, int seed) {
+  static GeneratedLevel generate(
+    LevelSpec spec,
+    int seed, {
+    int attempts = 24,
+  }) {
     if (spec.isTutorial) return _tutorial(spec);
-    for (var attempt = 0; attempt < 24; attempt++) {
+    for (var attempt = 0; attempt < attempts; attempt++) {
       final built = _build(spec, seed + attempt);
       if (built != null) {
         return GeneratedLevel(
@@ -97,7 +115,7 @@ abstract final class LevelGenerator {
     final history = <String>[_key(tubes)];
     final guide = <Move>[];
     final steps = DifficultyCurve.scrambleSteps(spec);
-    final floor = DifficultyCurve.parFloor(spec.level);
+    final floor = DifficultyCurve.parFloorOf(spec);
     List<List<int>>? bestTubes;
     List<Move>? bestGuide;
     var bestExtra = -1;

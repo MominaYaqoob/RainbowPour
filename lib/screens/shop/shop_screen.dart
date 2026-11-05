@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../ads/rewarded_flow.dart';
 import '../../core/app_colors.dart';
 import '../../widgets/background_theme.dart';
 import '../../widgets/bottle_shape.dart';
@@ -214,28 +215,33 @@ class _ShopScreenState extends State<ShopScreen>
 
   // ----------------------------------------------------------- gems tab
 
-  static const _adGems = 10;
-  static const _adLimit = 3;
-
   /// Ads watched today (saved per day).
   int _adsToday = 0;
 
-  void _watchAd() {
-    if (_adsToday >= _adLimit) {
-      InfoDialog.dailyLimit(context);
-      return;
-    }
-    // demo: pretend the ad finished
-    setState(() {
-      _adsToday++;
-      _gems += _adGems;
-    });
-    AppPrefs.addGems(_adGems);
-    AppPrefs.addAdToday();
+  Future<void> _watchAd() async {
+    await RewardedFlow.run(
+      context,
+      gemCap: true,
+      onReward: () async {
+        final ok = await AppPrefs.watchedGemAd();
+        if (!mounted) return;
+        if (!ok) {
+          await InfoDialog.dailyLimit(context);
+          return;
+        }
+        final watched = await AppPrefs.adsToday();
+        final gems = await AppPrefs.gems();
+        if (!mounted) return;
+        setState(() {
+          _adsToday = watched;
+          _gems = gems;
+        });
+      },
+    );
   }
 
   Widget _gemsTab() {
-    final left = _adLimit - _adsToday;
+    final left = AppPrefs.gemAdDailyCap - _adsToday;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
@@ -275,7 +281,7 @@ class _ShopScreenState extends State<ShopScreen>
                             ),
                           ),
                           Text(
-                            'Get +$_adGems gems each time',
+                            'Get +${AppPrefs.gemAdReward} gems each time',
                             style: GoogleFonts.outfit(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -291,7 +297,7 @@ class _ShopScreenState extends State<ShopScreen>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    for (var i = 0; i < _adLimit; i++)
+                    for (var i = 0; i < AppPrefs.gemAdDailyCap; i++)
                       Container(
                         width: 12,
                         height: 12,
@@ -311,8 +317,8 @@ class _ShopScreenState extends State<ShopScreen>
                 const SizedBox(height: 6),
                 Text(
                   left > 0
-                      ? '$_adsToday / $_adLimit watched today'
-                      : 'All $_adLimit watched. Come back tomorrow!',
+                      ? '$_adsToday / ${AppPrefs.gemAdDailyCap} watched today'
+                      : 'All ${AppPrefs.gemAdDailyCap} watched. Come back tomorrow!',
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -327,7 +333,9 @@ class _ShopScreenState extends State<ShopScreen>
                       ? Icons.play_circle_fill_rounded
                       : Icons.schedule_rounded,
                   dim: left == 0,
-                  onPressed: _watchAd,
+                  onPressed: () {
+                    _watchAd();
+                  },
                 ),
               ],
             ),

@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_colors.dart';
+import '../../core/app_prefs.dart';
+import '../../game/difficulty.dart';
 import '../../widgets/entrance.dart';
-import '../../widgets/gem_icon.dart';
 import '../../widgets/page_shell.dart';
 
-/// Score and stats. All numbers are sample data until the game saves progress.
+/// Score and stats loaded from the player's save.
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
@@ -21,14 +22,52 @@ class _StatsScreenState extends State<StatsScreen>
     duration: const Duration(milliseconds: 1500),
   )..forward();
 
-  // (level, stars, moves, is a new best)
-  static const _recent = <(int, int, int, bool)>[
-    (24, 3, 22, true),
-    (23, 2, 31, false),
-    (22, 3, 19, true),
-    (21, 1, 44, false),
-    (20, 3, 25, false),
-  ];
+  int _completed = 0;
+  int _moves = 0;
+  int _starSum = 0;
+  int _bestStreak = 0;
+  int _threeStars = 0;
+  List<({int level, int stars})> _latest = const [];
+
+  int get _starCap => DifficultyCurve.maxLevel * 3;
+
+  double get _starFill {
+    final cap = _starCap;
+    if (cap <= 0) return 0;
+    final raw = _starSum / cap;
+    if (raw < 0) return 0;
+    if (raw > 1) return 1;
+    return raw;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final totalsFuture = AppPrefs.totals();
+    final starsFuture = AppPrefs.stars();
+    final streakFuture = AppPrefs.bestStreak();
+    final totals = await totalsFuture;
+    final stars = await starsFuture;
+    final streak = await streakFuture;
+    if (!mounted) return;
+    final ranked = stars.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
+    setState(() {
+      _completed = totals.completed;
+      _moves = totals.moves;
+      _starSum = stars.values.fold(0, (sum, n) => sum + n);
+      _bestStreak = streak;
+      _threeStars = stars.values.where((n) => n == 3).length;
+      _latest = [
+        for (final entry in ranked.take(5))
+          (level: entry.key, stars: entry.value),
+      ];
+    });
+  }
 
   @override
   void dispose() {
@@ -51,9 +90,17 @@ class _StatsScreenState extends State<StatsScreen>
             end: 0.55,
             child: Row(
               children: [
-                _tile(Icons.emoji_events_rounded, '24', 'Levels done'),
+                _tile(
+                  Icons.emoji_events_rounded,
+                  _formatCount(_completed),
+                  'Levels done',
+                ),
                 const SizedBox(width: 12),
-                _tile(Icons.local_fire_department_rounded, '5', 'Best streak'),
+                _tile(
+                  Icons.local_fire_department_rounded,
+                  _formatCount(_bestStreak),
+                  'Best streak',
+                ),
               ],
             ),
           ),
@@ -64,9 +111,13 @@ class _StatsScreenState extends State<StatsScreen>
             end: 0.65,
             child: Row(
               children: [
-                _tile(null, '412', 'Gems earned', gem: true),
+                _tile(Icons.swipe_rounded, _formatCount(_moves), 'Total moves'),
                 const SizedBox(width: 12),
-                _tile(Icons.workspace_premium_rounded, '11', '3-star levels'),
+                _tile(
+                  Icons.workspace_premium_rounded,
+                  _formatCount(_threeStars),
+                  '3-star levels',
+                ),
               ],
             ),
           ),
@@ -74,7 +125,7 @@ class _StatsScreenState extends State<StatsScreen>
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
-              'RECENT LEVELS',
+              'LATEST LEVELS',
               style: GoogleFonts.outfit(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
@@ -83,12 +134,26 @@ class _StatsScreenState extends State<StatsScreen>
               ),
             ),
           ),
-          for (var i = 0; i < _recent.length; i++)
+          if (_latest.isEmpty)
+            Entrance(
+              progress: _in,
+              begin: 0.4,
+              end: 0.8,
+              child: Text(
+                'Play your first level!',
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.75),
+                ),
+              ),
+            ),
+          for (var i = 0; i < _latest.length; i++)
             Entrance(
               progress: _in,
               begin: 0.4 + i * 0.08,
               end: 0.8 + i * 0.08 > 1 ? 1 : 0.8 + i * 0.08,
-              child: _row(_recent[i]),
+              child: _row(_latest[i].level, _latest[i].stars),
             ),
         ],
       ),
@@ -121,7 +186,7 @@ class _StatsScreenState extends State<StatsScreen>
             const Icon(Icons.star_rounded, size: 46, color: AppColors.gold),
             const SizedBox(width: 8),
             Text(
-              '63',
+              _formatCount(_starSum),
               style: GoogleFonts.outfit(
                 fontSize: 44,
                 fontWeight: FontWeight.w800,
@@ -132,7 +197,7 @@ class _StatsScreenState extends State<StatsScreen>
               ),
             ),
             Text(
-              ' / 72',
+              ' / $_starCap',
               style: GoogleFonts.outfit(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
@@ -161,7 +226,7 @@ class _StatsScreenState extends State<StatsScreen>
                 ColoredBox(color: Colors.white.withValues(alpha: 0.2)),
                 FractionallySizedBox(
                   alignment: Alignment.centerLeft,
-                  widthFactor: 63 / 72,
+                  widthFactor: _starFill,
                   child: const ColoredBox(color: AppColors.gold),
                 ),
               ],
@@ -172,12 +237,7 @@ class _StatsScreenState extends State<StatsScreen>
     ),
   );
 
-  Widget _tile(
-    IconData? icon,
-    String value,
-    String label, {
-    bool gem = false,
-  }) => Expanded(
+  Widget _tile(IconData icon, String value, String label) => Expanded(
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
       decoration: BoxDecoration(
@@ -194,9 +254,7 @@ class _StatsScreenState extends State<StatsScreen>
       ),
       child: Row(
         children: [
-          gem
-              ? const GemIcon(size: 28)
-              : Icon(icon, size: 28, color: AppColors.gold),
+          Icon(icon, size: 28, color: AppColors.gold),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -204,6 +262,8 @@ class _StatsScreenState extends State<StatsScreen>
               children: [
                 Text(
                   value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.outfit(
                     fontSize: 21,
                     fontWeight: FontWeight.w800,
@@ -228,8 +288,7 @@ class _StatsScreenState extends State<StatsScreen>
     ),
   );
 
-  Widget _row((int, int, int, bool) r) {
-    final (level, stars, moves, best) = r;
+  Widget _row(int level, int stars) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
@@ -261,35 +320,26 @@ class _StatsScreenState extends State<StatsScreen>
                   ? AppColors.gold
                   : Colors.white.withValues(alpha: 0.2),
             ),
-          const Spacer(),
-          if (best)
-            Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2FD071),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                'BEST',
-                style: GoogleFonts.outfit(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          Text(
-            '$moves moves',
-            style: GoogleFonts.outfit(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.75),
-            ),
-          ),
         ],
       ),
     );
   }
+}
+
+/// Groups [n] with commas. Very large totals use K or M so a tile stays one line.
+String _formatCount(int n) {
+  final value = n < 0 ? 0 : n;
+  if (value < 100000) {
+    return value.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
+  }
+  if (value < 1000000) return '${_compact(value / 1000)}K';
+  return '${_compact(value / 1000000)}M';
+}
+
+String _compact(double v) {
+  final text = v.toStringAsFixed(v >= 100 ? 0 : 1);
+  return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
 }

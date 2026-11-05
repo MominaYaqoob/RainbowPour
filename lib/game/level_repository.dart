@@ -35,6 +35,40 @@ abstract final class LevelRepository {
     }
   }
 
+  static final Map<int, GeneratedLevel> _challengeCache = {};
+  static final Map<int, Future<GeneratedLevel>> _challengeInflight = {};
+
+  /// Today's daily board, built on a worker isolate (on the caller when the
+  /// platform has no isolates). Cached by the local `yyyyMMdd` key.
+  static Future<GeneratedLevel> getChallenge(DateTime day) {
+    final key = DifficultyCurve.challengeSeed(day);
+    final cached = _challengeCache[key];
+    if (cached != null) return Future<GeneratedLevel>.value(cached);
+    final pending = _challengeInflight[key];
+    if (pending != null) return pending;
+    final future = _loadChallenge(day, key);
+    _challengeInflight[key] = future;
+    return future;
+  }
+
+  static Future<GeneratedLevel> _loadChallenge(DateTime day, int key) async {
+    try {
+      final generated = await _challengeInWorker(day);
+      _challengeCache[key] = generated;
+      return generated;
+    } finally {
+      _challengeInflight.remove(key);
+    }
+  }
+
+  static Future<GeneratedLevel> _challengeInWorker(DateTime day) async {
+    try {
+      return await Isolate.run(() => LevelGenerator.forChallenge(day));
+    } on UnsupportedError {
+      return LevelGenerator.forChallenge(day);
+    }
+  }
+
   static Future<GeneratedLevel> _load(int level) async {
     try {
       final generated = await _inWorker(level);

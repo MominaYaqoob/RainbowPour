@@ -18,6 +18,8 @@ class LevelCompleteDialog extends StatefulWidget {
     required this.stars,
     required this.moves,
     required this.gems,
+    this.offerDouble = false,
+    this.onDouble,
     required this.onNext,
     required this.onReplay,
     required this.onHome,
@@ -27,6 +29,10 @@ class LevelCompleteDialog extends StatefulWidget {
   final int stars; // 1..3
   final int moves;
   final int gems;
+
+  /// Level 1 and the daily challenge do not offer this.
+  final bool offerDouble;
+  final Future<bool> Function()? onDouble;
   final VoidCallback onNext;
   final VoidCallback onReplay;
   final VoidCallback onHome;
@@ -37,6 +43,8 @@ class LevelCompleteDialog extends StatefulWidget {
     int stars = 3,
     int moves = 24,
     int gems = 30,
+    bool offerDouble = false,
+    Future<bool> Function()? onDouble,
     required VoidCallback onNext,
     required VoidCallback onReplay,
     required VoidCallback onHome,
@@ -52,6 +60,8 @@ class LevelCompleteDialog extends StatefulWidget {
         stars: stars,
         moves: moves,
         gems: gems,
+        offerDouble: offerDouble,
+        onDouble: onDouble,
         onNext: onNext,
         onReplay: onReplay,
         onHome: onHome,
@@ -83,6 +93,20 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
     vsync: this,
     duration: const Duration(seconds: 5),
   )..repeat();
+
+  bool _doubled = false;
+  bool _doubleBusy = false;
+
+  Future<void> _onDouble() async {
+    if (_doubled || _doubleBusy || widget.onDouble == null) return;
+    setState(() => _doubleBusy = true);
+    final ok = await widget.onDouble!();
+    if (!mounted) return;
+    setState(() {
+      _doubleBusy = false;
+      if (ok) _doubled = true;
+    });
+  }
 
   @override
   void dispose() {
@@ -211,40 +235,50 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
             icon: Icons.arrow_forward_rounded,
             onPressed: widget.onNext,
           ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: widget.onNext,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.gold.withValues(alpha: 0.8),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.play_circle_fill_rounded,
-                    size: 17,
-                    color: AppColors.gold,
+          if (widget.offerDouble) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: _onDouble,
+              behavior: HitTestBehavior.opaque,
+              child: Opacity(
+                opacity: _doubled ? 0.45 : 1,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
                   ),
-                  const SizedBox(width: 7),
-                  Text(
-                    'Watch an ad for 2x gems',
-                    style: GoogleFonts.outfit(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.gold.withValues(alpha: 0.8),
                     ),
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _doubled
+                            ? Icons.check_rounded
+                            : Icons.play_circle_fill_rounded,
+                        size: 17,
+                        color: AppColors.gold,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        _doubled ? 'Doubled' : 'Watch an ad for 2x gems',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

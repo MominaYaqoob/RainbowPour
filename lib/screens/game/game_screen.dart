@@ -1,10 +1,16 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../ads/ad_service.dart';
+import '../../ads/rewarded_flow.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
+import '../../core/audio_service.dart';
+import '../../core/challenge_timer.dart';
+import '../../core/daily_challenge.dart' as daily_challenge;
 import '../../core/haptics.dart';
 import '../../core/save_data.dart';
 import '../../game/difficulty.dart';
@@ -27,22 +33,47 @@ import '../../widgets/info_dialog.dart';
 import '../../widgets/night_background.dart';
 import '../../widgets/water_button.dart';
 import '../shop/not_enough_gems_dialog.dart';
+import 'board_layout.dart';
 import 'level_complete_dialog.dart';
 import 'level_failed_dialog.dart';
 import 'sample_board.dart';
 
-/// Game screen: the same layout as before, driven by [GameState].
+/// Game screen: a campaign level, or one daily challenge board.
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, this.level});
+  const GameScreen({super.key, this.level})
+    : day = null,
+      challengeSeconds = daily_challenge.challengeSeconds,
+      elapsed = null;
 
-  /// Null = the player's current level.
+  /// Today's daily board. No campaign progress is written from this mode.
+  ///
+  /// [elapsed] replaces the monotonic stopwatch in tests. The phone clock
+  /// does not feed the countdown.
+  const GameScreen.challenge({
+    super.key,
+    required this.day,
+    this.challengeSeconds = daily_challenge.challengeSeconds,
+    this.elapsed,
+  }) : level = null;
+
+  /// Null = the player's current level. Ignored for [GameScreen.challenge].
   final int? level;
+
+  /// Local day of a daily challenge, or null for a campaign level.
+  final DateTime? day;
+
+  /// Countdown length. Tests pass a short one; the game uses 5 minutes.
+  final int challengeSeconds;
+
+  /// Monotonic elapsed time for tests. Null uses a [Stopwatch].
+  final Duration Function()? elapsed;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+class _GameScreenState extends State<GameScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _in = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1500),
@@ -110,16 +141,61 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   /// 0.78..1: shrinks the bottom buttons on short screens.
   double _f = 1;
 
-  bool get _busy => _loading || _animating || _settling;
+  bool get _busy => _loading || _animating || _settling || _timeUp;
+
+  bool get _isChallenge => widget.day != null;
+
+  ChallengeTimer? _challengeTimer;
+  Timer? _clockTick;
+  bool _timeUp = false;
+  bool _challengeOver = false;
+  int _dialogHolds = 0;
+  bool _inBackground = false;
+
+  /// Restart is reloading the board; do not resume the old countdown.
+  bool _holdResume = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A full-screen ad Activity moves the app to inactive/paused, which
+    // pauses this clock. [_watch] also holds it, so the gap before that
+    // Activity starts does not keep counting.
+    if (!_isChallenge || _challengeOver || _timeUp) return;
+    final away =
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden;
+    if (away == _inBackground) return;
+    _inBackground = away;
+    if (away) {
+      _challengeTimer?.pause();
+    } else if (_dialogHolds == 0 && !_holdResume) {
+      _challengeTimer?.resume();
+    }
   }
 
   Future<void> _load() async {
     final gemsFuture = AppPrefs.gems();
+    final day = widget.day;
+    if (day != null) {
+      // The campaign tutorial and the saved campaign board stay untouched.
+      _tutorialDone = true;
+      final boardFuture = LevelRepository.getChallenge(day);
+      final pause = Future<void>.delayed(const Duration(milliseconds: 900));
+      final gems = await gemsFuture;
+      final generated = await boardFuture;
+      await pause;
+      if (!mounted) return;
+      _install(generated, level: generated.spec.level, gems: gems);
+      return;
+    }
     _tutorialDone = await AppPrefs.flag('tutorial', def: false);
     final level = widget.level ?? await AppPrefs.level();
     final boardFuture = LevelRepository.getLevel(level);
@@ -145,6 +221,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// Stores the board after a move so the level can be picked up again.
   void _saveProgress() {
+    // The one in-progress slot belongs to campaign levels.
+    if (_isChallenge) return;
     final play = _play;
     if (play == null || _tutorialMoves != null || play.isWon) return;
     AppPrefs.setInProgress(
@@ -191,7 +269,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _pourFrom = _pourTo = null;
       _hintFrom = _hintTo = -1;
       _undoPulse = false;
-      _tutorialMoves = generated.spec.isTutorial && !_tutorialDone
+      _tutorialMoves =
+          !_isChallenge && generated.spec.isTutorial && !_tutorialDone
           ? generated.solution
           : null;
       _tutorialStep = 0;
@@ -202,6 +281,74 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         ..used = restored != null && resume!.extraBottleUsed;
       _rewarded = false;
     });
+    if (_isChallenge) _startChallengeClock();
+  }
+
+  /// Full countdown, started only once the board can be played.
+  void _startChallengeClock() {
+    _timeUp = false;
+    _challengeOver = false;
+    _holdResume = false;
+    final timer = _challengeTimer ??= ChallengeTimer(
+      total: Duration(seconds: widget.challengeSeconds),
+      elapsed: widget.elapsed,
+    );
+    timer.start();
+    if (_inBackground || _dialogHolds > 0) timer.pause();
+    if (mounted) setState(() {});
+    _clockTick ??= Timer.periodic(
+      const Duration(milliseconds: 200),
+      (_) => _onClockTick(),
+    );
+  }
+
+  void _onClockTick() {
+    if (!mounted || !_isChallenge || _challengeOver || _timeUp) return;
+    final timer = _challengeTimer;
+    if (timer == null) return;
+    if (timer.isRunning && timer.isExpired) {
+      _onTimeUp();
+      return;
+    }
+    if (timer.isRunning) setState(() {});
+  }
+
+  void _holdTimer() {
+    if (!_isChallenge || _challengeOver || _timeUp) return;
+    _dialogHolds++;
+    _challengeTimer?.pause();
+  }
+
+  void _releaseTimer() {
+    if (_dialogHolds > 0) _dialogHolds--;
+    if (_holdResume ||
+        _challengeOver ||
+        _timeUp ||
+        _inBackground ||
+        _dialogHolds > 0) {
+      return;
+    }
+    _challengeTimer?.resume();
+  }
+
+  void _openDialog(Future<void> Function() show) {
+    if (!_isChallenge || _challengeOver || _timeUp) {
+      show();
+      return;
+    }
+    _holdTimer();
+    show().whenComplete(() {
+      if (mounted) _releaseTimer();
+    });
+  }
+
+  /// The quiet moment after a win: an interstitial may play if the gate
+  /// allows it (never in levels 1 to 3, one per three levels, 90 s apart),
+  /// then the next level starts. With no ad ready there is no delay.
+  Future<void> _nextAfterAd() async {
+    await AdService.instance.maybeShowInterstitial(level: _level);
+    if (!mounted) return;
+    await _next();
   }
 
   /// Moves on to the next level. The furthest unlocked level is saved on a win.
@@ -234,13 +381,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _hintFrom = _hintTo = -1;
       _selected = null;
     });
-    AppPrefs.setInProgress(null);
-    final pending = LevelRepository.getLevel(_level);
+    if (_isChallenge) _holdResume = true;
+    if (!_isChallenge) AppPrefs.setInProgress(null);
+    final day = widget.day;
+    final pending = day != null
+        ? LevelRepository.getChallenge(day)
+        : LevelRepository.getLevel(_level);
     await Future<void>.delayed(const Duration(milliseconds: 500));
     final generated = await pending;
     if (!mounted) return;
     _install(generated, level: _level);
-    LevelRepository.prefetch(_level);
+    if (day == null) LevelRepository.prefetch(_level);
   }
 
   /// The bottle the tutorial wants tapped next, or null outside the tutorial.
@@ -262,11 +413,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final selected = _selected;
     if (selected == null) {
       Haptics.tap();
+      AudioService.instance.play(Sfx.select);
       setState(() => _selected = index);
       return;
     }
     if (selected == index) {
       Haptics.tap();
+      AudioService.instance.play(Sfx.select);
       setState(() => _selected = null);
       return;
     }
@@ -289,6 +442,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _pourColor = color;
     });
     _pour.duration = Duration(milliseconds: math.min(1700, 880 + 150 * count));
+    AudioService.instance.play(Sfx.pour);
     _pour.forward(from: 0).whenComplete(() async {
       if (!mounted || token != _pourToken) return;
       final landed = next.board.bottles[index];
@@ -308,6 +462,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _saveProgress();
       if (done) {
         Haptics.success();
+        AudioService.instance.play(Sfx.bottleFull);
         _celeb.forward(from: 0).whenComplete(() {
           if (mounted) setState(_celebrating.clear);
         });
@@ -335,6 +490,51 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final play = _play;
     if (play == null) return;
     _rewarded = true;
+    if (_isChallenge) {
+      _challengeOver = true;
+      _challengeTimer?.pause();
+      Haptics.success();
+      AudioService.instance.play(Sfx.win);
+      final result = await AppPrefs.completeChallenge(
+        widget.day!,
+        DateTime.now(),
+      );
+      if (!mounted) return;
+      final nav = Navigator.of(context);
+      if (result.clockBlocked) {
+        await InfoDialog.clockChanged(context);
+        if (mounted) nav.pop();
+        return;
+      }
+      if (result.wrongDay) {
+        await InfoDialog.show(
+          context,
+          icon: Icons.bedtime_rounded,
+          title: 'Challenge ended at midnight',
+          message:
+              'The day changed before you finished, so there is no reward.',
+          primary: 'Continue',
+          onPrimary: () => nav.pop(),
+        );
+        return;
+      }
+      final bonus = result.weeklyBonus
+          ? '\nWeekly bonus: +${daily_challenge.weeklyBonusGems} gems.'
+          : '';
+      final message = result.alreadyDone
+          ? 'You already finished this day.'
+          : 'You earned ${result.gems} gems.\nStreak: ${result.streak} days.$bonus';
+      await InfoDialog.show(
+        context,
+        icon: Icons.emoji_events_rounded,
+        color: const Color(0xFFFFC107),
+        title: 'Challenge complete',
+        message: message,
+        primary: 'Continue',
+        onPrimary: () => nav.pop(),
+      );
+      return;
+    }
     AppPrefs.setInProgress(null);
     if (_tutorialMoves != null) {
       setState(() => _tutorialMoves = null);
@@ -344,6 +544,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final stars = Stars.count(level: _level, par: _par, moves: play.moves);
     final reward = Rewards.gemsForStars(stars);
     Haptics.success();
+    AudioService.instance.play(Sfx.win);
     final total = await AppPrefs.addGems(reward);
     // best stars, completed count, total moves and the next level
     await AppPrefs.recordWin(
@@ -352,6 +553,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       moves: play.moves,
       maxLevel: DifficultyCurve.maxLevel,
     );
+    AdService.instance.onLevelCompleted();
     if (!mounted) return;
     setState(() => _gems = total);
     LevelCompleteDialog.show(
@@ -360,9 +562,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       stars: stars,
       moves: play.moves,
       gems: reward,
+      offerDouble: _level != 1,
+      onDouble: () => _doubleWin(reward),
       onNext: () {
         Navigator.of(context).pop();
-        _next();
+        _nextAfterAd();
       },
       onReplay: () {
         Navigator.of(context).pop();
@@ -374,29 +578,32 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _showStuck() {
     Haptics.fail();
-    LevelFailedDialog.show(
-      context,
-      onUndo: () {
-        Navigator.of(context).pop();
-        _undo();
-      },
-      onExtraBottle: () {
-        final already = _extra.used;
-        final navigator = Navigator.of(context);
-        _addBottle().then((_) {
-          if (!already && _extra.used && mounted) navigator.pop();
-        });
-      },
-      onRestart: () {
-        Navigator.of(context).pop();
-        _restart();
-      },
-      onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
-      onWatchAd: () {
-        Navigator.of(context).pop();
-        // TODO(ads): grant the extra bottle only after a rewarded ad.
-        InfoDialog.adNotReady(context);
-      },
+    AudioService.instance.play(Sfx.fail);
+    _openDialog(
+      () => LevelFailedDialog.show(
+        context,
+        onUndo: () {
+          Navigator.of(context).pop();
+          _undo();
+        },
+        onExtraBottle: () {
+          final already = _extra.used;
+          final navigator = Navigator.of(context);
+          _addBottle().then((_) {
+            if (!already && _extra.used && mounted) navigator.pop();
+          });
+        },
+        onRestart: () {
+          Navigator.of(context).pop();
+          _restart();
+        },
+        onHome: () => Navigator.of(context).popUntil((r) => r.isFirst),
+        onWatchAd: () {
+          if (_extra.used || _tutorialMoves != null) return;
+          Navigator.of(context).pop();
+          _watch(_grantFreeBottle);
+        },
+      ),
     );
   }
 
@@ -408,13 +615,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return;
     }
     if (!_undos.hasAny) {
-      InfoDialog.extraUndo(
-        context,
-        onWatch: () {
-          // TODO(ads): grant these only after a rewarded ad completes.
-          _undos.grantWatchedAd();
-          _undo();
-        },
+      _openDialog(
+        () => InfoDialog.extraUndo(
+          context,
+          onWatch: () {
+            _watch(() async {
+              _undos.grantWatchedAd();
+              if (!mounted) return;
+              await _undo();
+            });
+          },
+        ),
       );
       return;
     }
@@ -439,15 +650,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       // no gems are taken when the hint is "undo"
       _pulseUndo();
       final steps = advice?.undoSteps ?? 0;
-      InfoDialog.show(
-        context,
-        icon: Icons.undo_rounded,
-        title: steps > 0
-            ? 'Undo $steps ${steps == 1 ? 'move' : 'moves'}'
-            : 'Undo a few moves',
-        message: steps > 0
-            ? 'Undo $steps to get back on a way to win, then ask for a hint again.'
-            : 'This board has no way forward. Undo, then try again.',
+      _openDialog(
+        () => InfoDialog.show(
+          context,
+          icon: Icons.undo_rounded,
+          title: steps > 0
+              ? 'Undo $steps ${steps == 1 ? 'move' : 'moves'}'
+              : 'Undo a few moves',
+          message: steps > 0
+              ? 'Undo $steps to get back on a way to win, then ask for a hint again.'
+              : 'This board has no way forward. Undo, then try again.',
+        ),
       );
       return;
     }
@@ -473,11 +686,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (play == null) return;
     Haptics.tap();
     if (!_extra.take()) {
-      InfoDialog.show(
-        context,
-        icon: Icons.add_rounded,
-        title: 'One Bottle Only',
-        message: 'You can add one extra bottle on this level.',
+      _openDialog(
+        () => InfoDialog.show(
+          context,
+          icon: Icons.add_rounded,
+          title: 'One Bottle Only',
+          message: 'You can add one extra bottle on this level.',
+        ),
       );
       _extra.used = true;
       return;
@@ -506,18 +721,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _needGems(int cost) {
-    NotEnoughGemsDialog.show(
-      context,
-      need: cost,
-      have: _gems,
-      onGetGems: () {
-        Navigator.of(context).pop();
-        _soon('The shop');
-      },
-      onWatchAd: () {
-        Navigator.of(context).pop();
-        _soon('Rewarded ads');
-      },
+    _openDialog(
+      () => NotEnoughGemsDialog.show(
+        context,
+        need: cost,
+        have: _gems,
+        onGetGems: () {
+          Navigator.of(context).pop();
+          _soon('The shop');
+        },
+        onWatchAd: () {
+          Navigator.of(context).pop();
+          _watch(_grantGemAd, gems: true);
+        },
+      ),
     );
   }
 
@@ -532,11 +749,66 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _clockTick?.cancel();
     _in.dispose();
     _loop.dispose();
     _pour.dispose();
     _celeb.dispose();
     super.dispose();
+  }
+
+  /// Pauses the challenge clock for the whole ad, including the moment
+  /// before the ad Activity sends the app to the background.
+  Future<RewardedResult> _watch(
+    Future<void> Function() onReward, {
+    bool gems = false,
+  }) {
+    _holdTimer();
+    return RewardedFlow.run(
+      context,
+      gemCap: gems,
+      onReward: onReward,
+    ).whenComplete(() {
+      if (mounted) _releaseTimer();
+    });
+  }
+
+  Future<bool> _doubleWin(int base) async {
+    var granted = false;
+    await _watch(() async {
+      final total = await AppPrefs.addGems(base);
+      granted = true;
+      if (mounted) setState(() => _gems = total);
+    });
+    return granted;
+  }
+
+  Future<void> _grantGemAd() async {
+    final ok = await AppPrefs.watchedGemAd();
+    if (!mounted) return;
+    if (!ok) {
+      await InfoDialog.dailyLimit(context);
+      return;
+    }
+    final total = await AppPrefs.gems();
+    if (!mounted) return;
+    setState(() => _gems = total);
+  }
+
+  Future<void> _grantFreeBottle() async {
+    final play = _play;
+    if (play == null || play.isWon || !_extra.take()) return;
+    if (!mounted) return;
+    setState(() {
+      _selected = null;
+      _play = GameState(
+        board: GameEngine.addEmptyBottle(play.board),
+        moves: play.moves,
+        history: play.history,
+      );
+    });
+    _saveProgress();
   }
 
   void _soon(String what) {
@@ -558,26 +830,50 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       );
   }
 
+  void _onTimeUp() {
+    if (!_isChallenge || _timeUp || _challengeOver) return;
+    _timeUp = true;
+    _challengeTimer?.pause();
+    AudioService.instance.play(Sfx.fail);
+    setState(() {});
+    final nav = Navigator.of(context);
+    InfoDialog.show(
+      context,
+      icon: Icons.timer_off_rounded,
+      color: const Color(0xFFFF3D5A),
+      title: "Time's up",
+      message: 'The clock ran out. Try the same board again?',
+      primary: 'Retry',
+      secondary: 'Exit',
+      onPrimary: () {
+        _restart();
+      },
+      onSecondary: () => nav.pop(),
+    );
+  }
+
   void _pause() {
     if (_animating) return;
     Haptics.tap();
-    showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Pause',
-      barrierColor: Colors.black.withValues(alpha: 0.6),
-      transitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (context, _, _) => const SizedBox.shrink(),
-      transitionBuilder: (context, a, _, _) {
-        final c = CurvedAnimation(parent: a, curve: Curves.easeOutBack);
-        return FadeTransition(
-          opacity: a,
-          child: ScaleTransition(
-            scale: Tween(begin: 0.85, end: 1.0).animate(c),
-            child: Center(child: _pauseCard(context)),
-          ),
-        );
-      },
+    _openDialog(
+      () => showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'Pause',
+        barrierColor: Colors.black.withValues(alpha: 0.6),
+        transitionDuration: const Duration(milliseconds: 260),
+        pageBuilder: (context, _, _) => const SizedBox.shrink(),
+        transitionBuilder: (context, a, _, _) {
+          final c = CurvedAnimation(parent: a, curve: Curves.easeOutBack);
+          return FadeTransition(
+            opacity: a,
+            child: ScaleTransition(
+              scale: Tween(begin: 0.85, end: 1.0).animate(c),
+              child: Center(child: _pauseCard(context)),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -768,88 +1064,117 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Widget _topBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            onTap: _pause,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF0A1040).withValues(alpha: 0.85),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: _pause,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF0A1040).withValues(alpha: 0.85),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.pause_rounded,
+                    size: 24,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-              child: const Icon(
-                Icons.pause_rounded,
-                size: 24,
-                color: Colors.white,
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A1040).withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppColors.gold.withValues(alpha: 0.7),
+                  ),
+                ),
+                child: Text(
+                  _isChallenge ? 'Daily Challenge' : 'Level $_level',
+                  style: GoogleFonts.outfit(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-            ),
+              const Spacer(),
+              GemPill(gems: _gems, onTap: () => _soon('The shop')),
+            ],
           ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1040).withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.gold.withValues(alpha: 0.7)),
+          if (_isChallenge)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Center(child: _timerChip()),
             ),
-            child: Text(
-              'Level $_level',
-              style: GoogleFonts.outfit(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const Spacer(),
-          GemPill(gems: _gems, onTap: () => _soon('The shop')),
         ],
       ),
     );
   }
 
-  /// Rows of bottles on shelves, sized to the free space. The position of
-  /// every bottle is known here: the pour carries a bottle over its target.
-  _Layout _layoutFor(BoxConstraints c) {
-    final n = _board.length;
-    final rows = n <= 4 ? 1 : (n <= 12 ? 2 : (n <= 18 ? 3 : 4));
-    final perRow = (n / rows).ceil();
-    final gap = perRow > 5 ? 10.0 : 14.0;
-    const shelf = 16.0;
-    final rowGap = rows > 2 ? 14.0 : 24.0;
-    final byWidth = (c.maxWidth - 48 - gap * (perRow - 1)) / perRow;
-    final byHeight =
-        ((c.maxHeight - rowGap * (rows - 1) - shelf * rows - 40) / rows) *
-        36 /
-        118;
-    // slim bottles: about 11.5% of the screen width
-    final maxW = (c.maxWidth * (rows == 1 ? 0.15 : 0.115)).clamp(30.0, 56.0);
-    final w = math.max(24.0, math.min(math.min(byWidth, byHeight), maxW));
-    final h = w * 118 / 36;
-    final blockH = rows * (h + shelf) + rowGap * (rows - 1);
-    // keep room above the first row for a bottle that pours onto it
-    final top0 = math.max(w * 0.7, (c.maxHeight - blockH) / 2);
-    final tops = <Offset>[];
-    final shelves = <Rect>[];
-    for (var r = 0; r < rows; r++) {
-      final start = r * perRow;
-      final end = math.min(n, start + perRow);
-      final k = end - start;
-      if (k <= 0) break;
-      final rowW = w * k + gap * (k - 1);
-      final x0 = (c.maxWidth - rowW) / 2;
-      final rowTop = top0 + r * (h + shelf + rowGap);
-      for (var j = 0; j < k; j++) {
-        tops.add(Offset(x0 + j * (w + gap), rowTop + 8));
-      }
-      shelves.add(Rect.fromLTWH(x0 - 12, rowTop + h + 7, rowW + 24, 9));
-    }
-    return _Layout(w, h, c.maxWidth, tops, shelves);
+  Widget _timerChip() {
+    final left =
+        _challengeTimer?.remaining ??
+        Duration(seconds: widget.challengeSeconds);
+    final urgent = !_loading && left.inSeconds <= 30;
+    final text = _clockText(left);
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1040).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: urgent
+              ? const Color(0xFFFF3D5A)
+              : AppColors.gold.withValues(alpha: 0.7),
+        ),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.outfit(
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+          color: urgent ? const Color(0xFFFF3D5A) : Colors.white,
+        ),
+      ),
+    );
+    if (!urgent) return chip;
+    return AnimatedBuilder(
+      animation: _loop,
+      builder: (context, child) {
+        final pulse = 0.55 + 0.45 * math.sin(2 * math.pi * _loop.value).abs();
+        return Opacity(opacity: pulse, child: child);
+      },
+      child: chip,
+    );
   }
+
+  String _clockText(Duration left) {
+    final seconds = left.inSeconds;
+    final m = seconds ~/ 60;
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  /// Rows of bottles on shelves. The pour carries a bottle over its target.
+  BoardLayout _layoutFor(BoxConstraints c) => layoutBoard(
+    bottles: _board.length,
+    maxWidth: c.maxWidth,
+    maxHeight: c.maxHeight,
+  );
 
   Widget _boardArea() {
     return LayoutBuilder(
@@ -911,7 +1236,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     ),
   );
 
-  Widget _bottle(int i, _Layout lay, _PourPose? pose) {
+  Widget _bottle(int i, BoardLayout lay, _PourPose? pose) {
     final w = lay.w;
     final up = i == _selected;
     final bob = up ? math.sin(2 * math.pi * _loop.value) * 2 : 0.0;
@@ -1002,7 +1327,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   ];
 
   /// A hand over the bottle to tap and a short instruction.
-  List<Widget> _tutorialGuide(_Layout lay) {
+  List<Widget> _tutorialGuide(BoardLayout lay) {
     final target = _tutorialTarget!;
     final step = math.min(_tutorialStep, _tutorialSelect.length - 1);
     final text = _selected == null
@@ -1052,7 +1377,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// The bottle that is pouring, drawn above everything else so it can sit
   /// over its target and over the bottles around it.
-  Widget _pouringBottle(_Layout lay, _PourPose pose) {
+  Widget _pouringBottle(BoardLayout lay, _PourPose pose) {
     return Positioned(
       left: pose.topLeft.dx,
       top: pose.topLeft.dy,
@@ -1072,7 +1397,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// Which way the pouring bottle leans: 1 tips clockwise (its body ends up
   /// left of the target), -1 the other way. Never toward a screen edge.
-  int _pourDir(_Layout lay, int from, int to) {
+  int _pourDir(BoardLayout lay, int from, int to) {
     final fx = lay.tops[from].dx;
     final tx = lay.tops[to].dx;
     final room = lay.w * 2.4;
@@ -1088,7 +1413,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// One frame of a pour: lift and travel to the target (0 to 0.22), pour
   /// with the lip held above the target's mouth (to 0.8), then go home.
-  _PourPose _pourPose(_Layout lay) {
+  _PourPose _pourPose(BoardLayout lay) {
     final from = _pourFrom!;
     final to = _pourTo!;
     final play = _play!;
@@ -1365,22 +1690,6 @@ class _BottleLook {
   final double extra;
 }
 
-/// Where the bottles stand on the board (all in board coordinates).
-class _Layout {
-  _Layout(this.w, this.h, this.width, this.tops, this.shelves);
-
-  final double w;
-  final double h;
-  final double width;
-
-  /// Top-left of every bottle's box.
-  final List<Offset> tops;
-  final List<Rect> shelves;
-
-  /// Scale from the 36-wide bottle drawing to the screen.
-  double get s => w / 36;
-}
-
 /// The pouring bottle and its target for one frame of a pour.
 class _PourPose {
   const _PourPose(
@@ -1410,7 +1719,7 @@ class _FxPainter extends CustomPainter {
     required this.t,
   });
 
-  final _Layout lay;
+  final BoardLayout lay;
   final BottleShape shape;
   final Rect? stream;
   final Color streamColor;

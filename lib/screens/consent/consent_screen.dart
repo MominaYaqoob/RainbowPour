@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../ads/ad_service.dart';
 import '../../core/anim.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
@@ -32,6 +34,8 @@ class _ConsentScreenState extends State<ConsentScreen>
     duration: const Duration(seconds: 6),
   )..repeat();
 
+  bool _busy = false;
+
   @override
   void dispose() {
     _in.dispose();
@@ -40,11 +44,26 @@ class _ConsentScreenState extends State<ConsentScreen>
   }
 
   Future<void> _agree() async {
-    await AppPrefs.setConsentDone();
-    if (!mounted) return;
-    Navigator.of(
-      context,
-    ).pushReplacement(fadeRoute(const OnboardingScreen(), zoom: true));
+    if (_busy) return;
+    _busy = true;
+    try {
+      await AppPrefs.setConsentDone();
+      // UMP form sits on top of this screen. A hung request must not trap it.
+      try {
+        await AdService.instance.initialize().timeout(
+          AdService.consentInitializeTimeout,
+        );
+      } catch (error) {
+        if (kDebugMode) debugPrint('AdService: $error');
+      }
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushReplacement(fadeRoute(const OnboardingScreen(), zoom: true));
+    } catch (error) {
+      _busy = false;
+      if (kDebugMode) debugPrint('AdService: $error');
+    }
   }
 
   void _showDoc(String title) {
@@ -192,7 +211,9 @@ class _ConsentScreenState extends State<ConsentScreen>
                   width: math.min(size.width - 56, 300),
                   label: 'Agree and continue',
                   icon: Icons.check_rounded,
-                  onPressed: _agree,
+                  onPressed: () {
+                    _agree();
+                  },
                 ),
               ),
               SizedBox(height: size.height * 0.035),
