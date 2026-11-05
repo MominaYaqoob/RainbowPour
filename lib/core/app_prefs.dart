@@ -1,60 +1,163 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Small wrapper around local storage: first-launch flags and the player's
-/// basic profile.
+import 'save_data.dart';
+
+/// Local storage for the player's progress and settings.
+///
+/// Everything lives in one [SaveData] document stored as JSON under
+/// [saveKey]. The first time it is missing, the values older builds kept in
+/// separate preference keys are migrated into it. The methods keep the names
+/// the screens already use.
 abstract final class AppPrefs {
-  static const _consentDone = 'consent_done';
-  static const _onboardingDone = 'onboarding_done';
-  static const _welcomeClaimed = 'welcome_claimed';
-  static const _profileDone = 'profile_done';
-  static const _nickname = 'nickname';
-  static const _avatar = 'avatar';
-  static const _gems = 'gems';
-  static const _level = 'level';
-  static const _skin = 'bottle_skin';
-  static const _bgMode = 'bg_mode';
+  static const saveKey = 'save_v1';
 
-  /// Settings switches: sound, music, vibration are on by default,
-  /// colorblind mode is off.
-  static Future<bool> flag(String key, {bool def = true}) async =>
-      (await _p).getBool('opt_$key') ?? def;
-  static Future<void> setFlag(String key, bool v) async =>
-      (await _p).setBool('opt_$key', v);
+  static SaveData? _data;
+  static Future<SaveData>? _loading;
 
-  static Future<SharedPreferences> get _p => SharedPreferences.getInstance();
+  static Future<SaveData> _load() => _data != null
+      ? Future.value(_data)
+      : (_loading ??= _read().then((d) => _data = d));
 
-  static Future<bool> isConsentDone() async =>
-      (await _p).getBool(_consentDone) ?? false;
-  static Future<void> setConsentDone() async =>
-      (await _p).setBool(_consentDone, true);
-
-  static Future<bool> isOnboardingDone() async =>
-      (await _p).getBool(_onboardingDone) ?? false;
-  static Future<void> setOnboardingDone() async =>
-      (await _p).setBool(_onboardingDone, true);
-
-  static Future<bool> isWelcomeClaimed() async =>
-      (await _p).getBool(_welcomeClaimed) ?? false;
-
-  /// Adds the welcome gift to the gem balance, once.
-  static Future<void> claimWelcome(int gems) async {
-    final p = await _p;
-    if (p.getBool(_welcomeClaimed) ?? false) return;
-    await p.setInt(_gems, (p.getInt(_gems) ?? 0) + gems);
-    await p.setBool(_welcomeClaimed, true);
+  static Future<SaveData> _read() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = SaveData.tryDecode(prefs.getString(saveKey));
+    if (saved != null) return saved;
+    final old = <String, Object?>{
+      for (final key in prefs.getKeys()) key: prefs.get(key),
+    };
+    final migrated = SaveData.fromLegacy(old);
+    await prefs.setString(saveKey, migrated.encode());
+    return migrated;
   }
 
-  static Future<int> skin() async => (await _p).getInt(_skin) ?? 0;
-  static Future<void> setSkin(int i) async => (await _p).setInt(_skin, i);
+  /// Runs [change] on the save and stores the result.
+  static Future<T> _update<T>(T Function(SaveData d) change) async {
+    final data = await _load();
+    final result = change(data);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(saveKey, data.encode());
+    return result;
+  }
 
-  static Future<int> bgMode() async => (await _p).getInt(_bgMode) ?? -1;
-  static Future<void> setBgMode(int i) async => (await _p).setInt(_bgMode, i);
+  /// Forgets the loaded copy so the next call reads storage again (tests).
+  @visibleForTesting
+  static void resetForTest() {
+    _data = null;
+    _loading = null;
+  }
 
-  static Future<int> level() async => (await _p).getInt(_level) ?? 1;
-  static Future<void> setLevel(int v) async =>
-      (await _p).setInt(_level, v);
+  // ---- settings and flags
 
-  static Future<int> gems() async => (await _p).getInt(_gems) ?? 0;
+  /// Settings switches and small flags: `sound`, `music`, `vibration`
+  /// (on by default), `colorblind` and `tutorial` (off by default).
+  static Future<bool> flag(String key, {bool def = true}) async {
+    final d = await _load();
+    return switch (key) {
+      'sound' => d.sound,
+      'music' => d.music,
+      'vibration' => d.vibration,
+      'colorblind' => d.colorblind,
+      'tutorial' => d.tutorialDone,
+      _ => def,
+    };
+  }
+
+  static Future<void> setFlag(String key, bool v) => _update((d) {
+    switch (key) {
+      case 'sound':
+        d.sound = v;
+      case 'music':
+        d.music = v;
+      case 'vibration':
+        d.vibration = v;
+      case 'colorblind':
+        d.colorblind = v;
+      case 'tutorial':
+        d.tutorialDone = v;
+    }
+  });
+
+  // ---- first launch
+
+  static Future<bool> isConsentDone() async => (await _load()).consentDone;
+  static Future<void> setConsentDone() => _update((d) => d.consentDone = true);
+
+  static Future<bool> isOnboardingDone() async =>
+      (await _load()).onboardingDone;
+  static Future<void> setOnboardingDone() =>
+      _update((d) => d.onboardingDone = true);
+
+  static Future<bool> isWelcomeClaimed() async =>
+      (await _load()).welcomeClaimed;
+
+  /// Adds the welcome gift to the gem balance, once.
+  static Future<void> claimWelcome(int gems) => _update((d) {
+    if (d.welcomeClaimed) return;
+    d.gems += gems;
+    d.welcomeClaimed = true;
+  });
+
+  // ---- shop
+
+  static Future<int> skin() async => (await _load()).skin;
+  static Future<void> setSkin(int i) => _update((d) => d.skin = i);
+
+  static Future<int> bgMode() async => (await _load()).bgMode;
+  static Future<void> setBgMode(int i) => _update((d) => d.bgMode = i);
+
+  /// Shop items the player has bought, e.g. `skin:tube` or `bg:2`.
+  static Future<Set<String>> owned() async => {...(await _load()).owned};
+
+  static Future<void> addOwned(String id) => _update((d) => d.owned.add(id));
+
+  // ---- progress
+
+  /// The furthest level the player can open.
+  static Future<int> level() async => (await _load()).level;
+  static Future<void> setLevel(int v) => _update((d) => d.level = v);
+
+  /// Stores a win: best stars, completed count, total moves, next level open.
+  /// Returns true when the stars are a new best for the level.
+  static Future<bool> recordWin({
+    required int level,
+    required int stars,
+    required int moves,
+    required int maxLevel,
+  }) => _update(
+    (d) => d.recordWin(
+      level: level,
+      stars: stars,
+      moves: moves,
+      maxLevel: maxLevel,
+    ),
+  );
+
+  /// Best stars per level (1 to 3); a level that was never won is missing.
+  static Future<Map<int, int>> stars() async => {...(await _load()).stars};
+
+  /// Levels won and moves made in all of them.
+  static Future<({int completed, int moves})> totals() async {
+    final d = await _load();
+    return (completed: d.levelsCompleted, moves: d.totalMoves);
+  }
+
+  // ---- gems
+
+  static Future<int> gems() async => (await _load()).gems;
+
+  /// Adds gems and returns the new total.
+  static Future<int> addGems(int n) => _update((d) => d.gems += n);
+
+  /// Takes [n] gems if there are enough. Returns false (and changes nothing)
+  /// when the player cannot afford it.
+  static Future<bool> spendGems(int n) => _update((d) {
+    if (d.gems < n) return false;
+    d.gems -= n;
+    return true;
+  });
+
+  // ---- rewarded ads
 
   static String _today() {
     final d = DateTime.now();
@@ -63,58 +166,39 @@ abstract final class AppPrefs {
 
   /// Gem ads watched today. Starts again from 0 on a new day.
   static Future<int> adsToday() async {
-    final p = await _p;
-    if (p.getString('ads_day') != _today()) return 0;
-    return p.getInt('ads_count') ?? 0;
+    final d = await _load();
+    return d.adsDay == _today() ? d.adsCount : 0;
   }
 
   /// Counts one more watched ad and returns today's total.
-  static Future<int> addAdToday() async {
-    final p = await _p;
-    final n = await adsToday() + 1;
-    await p.setString('ads_day', _today());
-    await p.setInt('ads_count', n);
-    return n;
-  }
+  static Future<int> addAdToday() => _update((d) {
+    final today = _today();
+    if (d.adsDay != today) {
+      d.adsDay = today;
+      d.adsCount = 0;
+    }
+    return ++d.adsCount;
+  });
 
-  /// Shop items the player has bought, e.g. `skin:tube` or `bg:2`.
-  static Future<Set<String>> owned() async =>
-      ((await _p).getStringList('owned') ?? const <String>[]).toSet();
+  // ---- profile
 
-  static Future<void> addOwned(String id) async {
-    final s = await owned()
-      ..add(id);
-    await (await _p).setStringList('owned', s.toList());
-  }
+  static Future<bool> isProfileDone() async => (await _load()).profileDone;
 
-  /// Adds gems and returns the new total.
-  static Future<int> addGems(int n) async {
-    final p = await _p;
-    final total = (p.getInt(_gems) ?? 0) + n;
-    await p.setInt(_gems, total);
-    return total;
-  }
+  static Future<void> saveProfile(String nickname, int avatar) => _update((d) {
+    d.nickname = nickname;
+    d.avatar = avatar;
+    d.profileDone = true;
+  });
 
-  /// Takes [n] gems if there are enough. Returns false (and changes nothing)
-  /// when the player cannot afford it.
-  static Future<bool> spendGems(int n) async {
-    final p = await _p;
-    final have = p.getInt(_gems) ?? 0;
-    if (have < n) return false;
-    await p.setInt(_gems, have - n);
-    return true;
-  }
+  static Future<String?> nickname() async => (await _load()).nickname;
+  static Future<int> avatar() async => (await _load()).avatar;
 
-  static Future<bool> isProfileDone() async =>
-      (await _p).getBool(_profileDone) ?? false;
+  // ---- the level being played
 
-  static Future<void> saveProfile(String nickname, int avatar) async {
-    final p = await _p;
-    await p.setString(_nickname, nickname);
-    await p.setInt(_avatar, avatar);
-    await p.setBool(_profileDone, true);
-  }
+  /// The unfinished level saved after the last move, or null.
+  static Future<InProgress?> inProgress() async => (await _load()).inProgress;
 
-  static Future<String?> nickname() async => (await _p).getString(_nickname);
-  static Future<int> avatar() async => (await _p).getInt(_avatar) ?? 0;
+  /// Saves the unfinished level, or clears it with null.
+  static Future<void> setInProgress(InProgress? progress) =>
+      _update((d) => d.inProgress = progress);
 }

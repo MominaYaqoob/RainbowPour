@@ -6,11 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
 import '../../core/haptics.dart';
+import '../../core/save_data.dart';
 import '../../game/difficulty.dart';
 import '../../game/engine.dart';
 import '../../game/generator.dart';
+import '../../game/hint_planner.dart';
 import '../../game/level_repository.dart';
 import '../../game/models.dart';
+import '../../game/resume.dart';
 import '../../game/rewards.dart';
 import '../../game/solver.dart';
 import '../../widgets/background_theme.dart';
@@ -96,6 +99,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _undoPulse = false;
 
   /// Level 1 teaching: the pours to guide the player through, or null.
+  /// Hints that always lead to a win (or say how far to undo).
+  HintPlanner? _planner;
+
   List<Move>? _tutorialMoves;
   int _tutorialStep = 0;
   bool _tutorialDone = false;
@@ -121,12 +127,51 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final gems = await gemsFuture;
     final generated = await boardFuture;
     await pause;
+    final saved = _tutorialDone ? await AppPrefs.inProgress() : null;
     if (!mounted) return;
-    _install(generated, level: level, gems: gems);
+    _install(generated, level: level, gems: gems, resume: saved);
     LevelRepository.prefetch(level);
+    final play = _play;
+    if (_resumed && play != null && play.isStuck) {
+      // a saved board with no moves left: show the same popup again
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showStuck();
+      });
+    }
   }
 
-  void _install(GeneratedLevel generated, {required int level, int? gems}) {
+  /// True when the board on screen came from the save, not a new shuffle.
+  bool _resumed = false;
+
+  /// Stores the board after a move so the level can be picked up again.
+  void _saveProgress() {
+    final play = _play;
+    if (play == null || _tutorialMoves != null || play.isWon) return;
+    AppPrefs.setInProgress(
+      InProgress(
+        mode: 'level',
+        level: _level,
+        capacity: play.board.capacity,
+        bottles: [for (final b in play.board.bottles) b.layers.toList()],
+        moves: play.moves,
+        history: [
+          for (final m in play.history) [m.from, m.to, m.count],
+        ],
+        freeUndos: _undos.free,
+        bonusUndos: _undos.bonus,
+        extraBottleUsed: _extra.used,
+      ),
+    );
+  }
+
+  void _install(
+    GeneratedLevel generated, {
+    required int level,
+    int? gems,
+    InProgress? resume,
+  }) {
+    final restored = restoreProgress(resume, generated);
+    _resumed = restored != null;
     _pourToken++;
     _pour.stop();
     _celeb.stop();
@@ -135,7 +180,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       if (gems != null) _gems = gems;
       _level = level;
       _par = generated.par;
-      _play = GameState(board: generated.board);
+      _play = restored ?? GameState(board: generated.board);
+      _planner = HintPlanner(generated.board, generated.solution);
       _sample = SampleBoard.fromGenerated(generated);
       _loading = false;
       _animating = false;
@@ -149,8 +195,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ? generated.solution
           : null;
       _tutorialStep = 0;
-      _undos = UndoCredits();
-      _extra = ExtraBottle();
+      _undos = restored != null
+          ? (UndoCredits(free: resume!.freeUndos)..bonus = resume.bonusUndos)
+          : UndoCredits();
+      _extra = ExtraBottle()
+        ..used = restored != null && resume!.extraBottleUsed;
       _rewarded = false;
     });
   }
@@ -185,6 +234,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _hintFrom = _hintTo = -1;
       _selected = null;
     });
+    AppPrefs.setInProgress(null);
     final pending = LevelRepository.getLevel(_level);
     await Future<void>.delayed(const Duration(milliseconds: 500));
     final generated = await pending;
@@ -255,6 +305,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           _settling = true;
         }
       });
+      _saveProgress();
       if (done) {
         Haptics.success();
         _celeb.forward(from: 0).whenComplete(() {
@@ -284,6 +335,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final play = _play;
     if (play == null) return;
     _rewarded = true;
+    AppPrefs.setInProgress(null);
     if (_tutorialMoves != null) {
       setState(() => _tutorialMoves = null);
       _tutorialDone = true;
@@ -293,11 +345,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final reward = Rewards.gemsForStars(stars);
     Haptics.success();
     final total = await AppPrefs.addGems(reward);
-    final saved = await AppPrefs.level();
-    final unlocked = _level + 1;
-    if (unlocked <= DifficultyCurve.maxLevel && unlocked > saved) {
-      await AppPrefs.setLevel(unlocked);
-    }
+    // best stars, completed count, total moves and the next level
+    await AppPrefs.recordWin(
+      level: _level,
+      stars: stars,
+      moves: play.moves,
+      maxLevel: DifficultyCurve.maxLevel,
+    );
     if (!mounted) return;
     setState(() => _gems = total);
     LevelCompleteDialog.show(
@@ -371,6 +425,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _selected = null;
       _hintFrom = _hintTo = -1;
     });
+    _saveProgress();
   }
 
   Future<void> _hint() async {
@@ -378,14 +433,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final play = _play;
     if (play == null || play.isWon) return;
     Haptics.tap();
-    final move = paidHint(play.board);
+    final advice = _planner?.next(play.board, play.history);
+    final move = advice?.move;
     if (move == null) {
+      // no gems are taken when the hint is "undo"
       _pulseUndo();
+      final steps = advice?.undoSteps ?? 0;
       InfoDialog.show(
         context,
         icon: Icons.undo_rounded,
-        title: 'Undo a few moves',
-        message: 'This board has no way forward. Undo, then try again.',
+        title: steps > 0
+            ? 'Undo $steps ${steps == 1 ? 'move' : 'moves'}'
+            : 'Undo a few moves',
+        message: steps > 0
+            ? 'Undo $steps to get back on a way to win, then ask for a hint again.'
+            : 'This board has no way forward. Undo, then try again.',
       );
       return;
     }
@@ -440,6 +502,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         history: play.history,
       );
     });
+    _saveProgress();
   }
 
   void _needGems(int cost) {

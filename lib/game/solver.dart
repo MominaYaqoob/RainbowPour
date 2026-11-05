@@ -29,7 +29,8 @@ abstract final class Solver {
   }) {
     if (maxNodes < 1) return null;
     // The search packs a colour into four bits, so colours are renumbered
-    // 0, 1, 2 ... first. More than 14 different colours do not fit, so big boards use the greedy hint.
+    // 0, 1, 2 ... first. More than 14 different colours do not fit, so big
+    // boards use the greedy hint instead.
     final ids = <int, int>{};
     for (final bottle in board.bottles) {
       for (final layer in bottle.layers) {
@@ -47,41 +48,87 @@ abstract final class Solver {
     return _Search(packed, maxNodes, prefer).run();
   }
 
+  /// A canonical text for a board: bottles sorted, so two boards that only
+  /// differ by the order of the bottles have the same key.
+  static String boardKey(Board board) {
+    final parts = [for (final bottle in board.bottles) bottle.layers.join(',')]
+      ..sort();
+    return parts.join('|');
+  }
+
   /// First move of a solution, or a greedy useful pour if the budget runs out.
-  static Move? hint(Board board, {int maxNodes = fastNodes}) {
+  ///
+  /// [visited] holds the [boardKey] of every board the player has already
+  /// been on. The greedy hint never leads back to one of them, so following
+  /// hints cannot go round in circles.
+  static Move? hint(
+    Board board, {
+    int maxNodes = fastNodes,
+    Set<String>? visited,
+  }) {
     final solved = solve(board, maxNodes: maxNodes);
-    if (solved != null) return solved.isEmpty ? null : solved.first;
-    return _greedy(board);
+    if (solved != null) {
+      if (solved.isEmpty) return null;
+      final first = solved.first;
+      final after = GameEngine.pour(board, first.from, first.to);
+      final seen =
+          after != null && visited?.contains(boardKey(after.board)) == true;
+      // a searched line that leads back to an old board is not followed
+      if (!seen) return first;
+    }
+    return _greedy(board, visited);
   }
 
   /// A good next pour for a board too big to search. It picks the useful
   /// pour that leaves the table closest to sorted (see [_potential]).
-  static Move? _greedy(Board board) {
+  static Move? _greedy(Board board, Set<String>? visited) {
     final moves = GameEngine.usefulMoves(board);
     Move? best;
     var bestScore = 1 << 30;
+    Move? bestSeen;
+    var bestSeenScore = 1 << 30;
     for (final move in moves) {
       final after = GameEngine.pour(board, move.from, move.to)!.board;
-      var score = _potential(after) * 8;
+      // never walk into a board with no useful pour left
+      if (!GameEngine.isWon(after) && !GameEngine.hasUsefulMove(after)) {
+        continue;
+      }
+      var score = potential(after) * 8;
       // on equal footing prefer bigger pours, and stacking on the same colour
       score -= move.count;
-      if (!board.bottles[move.to].isEmpty) score -= 2;
+      if (!board.bottles[move.to].isEmpty) score -= 3;
+      if (visited != null && visited.contains(boardKey(after))) {
+        // a board we have been on: only used if nothing new is left
+        if (score < bestSeenScore) {
+          bestSeenScore = score;
+          bestSeen = move;
+        }
+        continue;
+      }
       if (score < bestScore) {
         bestScore = score;
         best = move;
       }
     }
-    return best;
+    return best ?? bestSeen;
   }
 
-  /// Lower is closer to solved: three for every extra bottle a colour is
-  /// spread over, plus one for every unit that sits above a different colour.
-  static int _potential(Board board) {
+  /// Lower is closer to solved. Three for every extra bottle a colour is
+  /// spread over, two for every unit sitting above a different colour; less
+  /// for each empty bottle kept free (6), each finished bottle (8) and each
+  /// pair of open bottles that share a top colour (2).
+  static int potential(Board board) {
     final homes = <int, int>{};
+    final tops = <int, int>{};
     var buried = 0;
+    var empties = 0;
+    var done = 0;
     for (final bottle in board.bottles) {
       final layers = bottle.layers;
-      if (layers.isEmpty) continue;
+      if (layers.isEmpty) {
+        empties++;
+        continue;
+      }
       final seen = <int>{};
       var base = true;
       for (var i = 0; i < layers.length; i++) {
@@ -92,12 +139,18 @@ abstract final class Solver {
       for (final colour in seen) {
         homes[colour] = (homes[colour] ?? 0) + 1;
       }
+      if (bottle.isFull && base) done++;
+      if (!bottle.isFull) tops[layers.last] = (tops[layers.last] ?? 0) + 1;
     }
     var spread = 0;
     for (final count in homes.values) {
       spread += count - 1;
     }
-    return spread * 3 + buried;
+    var match = 0;
+    for (final count in tops.values) {
+      if (count > 1) match += count - 1;
+    }
+    return spread * 3 + buried * 2 - empties * 6 - done * 8 - match * 2;
   }
 }
 

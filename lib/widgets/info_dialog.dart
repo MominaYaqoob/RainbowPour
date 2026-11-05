@@ -111,10 +111,7 @@ class InfoDialog extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color.lerp(color, Colors.white, 0.35)!,
-                  color,
-                ],
+                colors: [Color.lerp(color, Colors.white, 0.35)!, color],
               ),
               border: Border.all(color: Colors.white, width: 2.4),
             ),

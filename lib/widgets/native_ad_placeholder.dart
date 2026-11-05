@@ -33,7 +33,11 @@ class NativeAdPlaceholder extends StatelessWidget {
                 colors: [Color(0xFF7FE9FF), Color(0xFF6B3BE0)],
               ),
             ),
-            child: const Icon(Icons.apps_rounded, color: Colors.white, size: 28),
+            child: const Icon(
+              Icons.apps_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

@@ -59,7 +59,10 @@ class ExtraBottle {
 /// player should undo instead of spending gems. Small boards get the first
 /// move of a searched solution; big boards get the pour that leaves the
 /// table closest to sorted.
-Move? paidHint(Board board) {
+///
+/// [visited] is the set of [Solver.boardKey]s the player has been on, so the
+/// hint does not send them back to an old board.
+Move? paidHint(Board board, {Set<String>? visited}) {
   if (GameEngine.isStuck(board)) return null;
-  return Solver.hint(board);
+  return Solver.hint(board, visited: visited);
 }

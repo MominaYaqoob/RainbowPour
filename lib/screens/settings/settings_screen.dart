@@ -112,10 +112,13 @@ class _SettingsScreenState extends State<SettingsScreen>
               Color(0xFF7FE9FF),
               Color(0xFF1FA9FF),
             ]),
-            _link(Icons.star_rounded, 'Rate Rainbow Pour', null, const [
-              Color(0xFFFFF27A),
-              Color(0xFFFFA000),
-            ], onTap: () => RateUsDialog.show(context)),
+            _link(
+              Icons.star_rounded,
+              'Rate Rainbow Pour',
+              null,
+              const [Color(0xFFFFF27A), Color(0xFFFFA000)],
+              onTap: () => RateUsDialog.show(context),
+            ),
             _link(Icons.tune_rounded, 'Ad privacy options', null, const [
               Color(0xFFB98CFF),
               Color(0xFF6B3BE0),
@@ -131,22 +134,34 @@ class _SettingsScreenState extends State<SettingsScreen>
           ]),
           const SizedBox(height: 18),
           _section('UI PREVIEW (DEMO ONLY)', 2, [
-            _link(Icons.hourglass_empty_rounded, 'Ad not ready', null, const [
-              Color(0xFFFFF27A),
-              Color(0xFFFFA000),
-            ], onTap: () => InfoDialog.adNotReady(context)),
-            _link(Icons.event_busy_rounded, 'Daily ad limit', null, const [
-              Color(0xFFFF9AB0),
-              Color(0xFFE0245B),
-            ], onTap: () => InfoDialog.dailyLimit(context)),
-            _link(Icons.schedule_rounded, 'Clock changed', null, const [
-              Color(0xFFFF9AB0),
-              Color(0xFFE0245B),
-            ], onTap: () => InfoDialog.clockChanged(context)),
-            _link(Icons.undo_rounded, 'Extra undo (ad)', null, const [
-              Color(0xFF7FE9FF),
-              Color(0xFF1FA9FF),
-            ], onTap: () => InfoDialog.extraUndo(context, onWatch: () {})),
+            _link(
+              Icons.hourglass_empty_rounded,
+              'Ad not ready',
+              null,
+              const [Color(0xFFFFF27A), Color(0xFFFFA000)],
+              onTap: () => InfoDialog.adNotReady(context),
+            ),
+            _link(
+              Icons.event_busy_rounded,
+              'Daily ad limit',
+              null,
+              const [Color(0xFFFF9AB0), Color(0xFFE0245B)],
+              onTap: () => InfoDialog.dailyLimit(context),
+            ),
+            _link(
+              Icons.schedule_rounded,
+              'Clock changed',
+              null,
+              const [Color(0xFFFF9AB0), Color(0xFFE0245B)],
+              onTap: () => InfoDialog.clockChanged(context),
+            ),
+            _link(
+              Icons.undo_rounded,
+              'Extra undo (ad)',
+              null,
+              const [Color(0xFF7FE9FF), Color(0xFF1FA9FF)],
+              onTap: () => InfoDialog.extraUndo(context, onWatch: () {}),
+            ),
           ]),
           const SizedBox(height: 22),
           Entrance(

@@ -323,7 +323,9 @@ class _ShopScreenState extends State<ShopScreen>
                 WaterButton(
                   width: math.min(MediaQuery.sizeOf(context).width - 64, 320),
                   label: left > 0 ? 'Watch Ad' : 'Come Back Tomorrow',
-                  icon: left > 0 ? Icons.play_circle_fill_rounded : Icons.schedule_rounded,
+                  icon: left > 0
+                      ? Icons.play_circle_fill_rounded
+                      : Icons.schedule_rounded,
                   dim: left == 0,
                   onPressed: _watchAd,
                 ),
@@ -336,9 +338,17 @@ class _ShopScreenState extends State<ShopScreen>
         const SizedBox(height: 10),
         _tip(Icons.card_giftcard_rounded, 'Daily reward', 'Log in every day'),
         const SizedBox(height: 10),
-        _tip(Icons.emoji_events_rounded, 'Complete levels', 'Earn gems as you win'),
+        _tip(
+          Icons.emoji_events_rounded,
+          'Complete levels',
+          'Earn gems as you win',
+        ),
         const SizedBox(height: 10),
-        _tip(Icons.local_fire_department_rounded, 'Daily challenge', 'Finish it for a big bonus'),
+        _tip(
+          Icons.local_fire_department_rounded,
+          'Daily challenge',
+          'Finish it for a big bonus',
+        ),
       ],
     );
   }

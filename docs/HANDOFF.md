@@ -37,20 +37,12 @@ Bottle skins: cone 0, flask 0, tube 700, potion 1500, jar 3000, diamond 6000. Ba
 
 ## 2. Known problems (fix these first)
 
-### 2.0 Solver file is in a half-edited state — FIX FIRST
-`lib/game/solver.dart`:
-- The constants at the top were switched back to **4 bits** (`_bits = 4`, `_mask = 15`, `_lenShift = 24`) because the 5-bit version (copy saved by the previous session; not in the repo) broke the search (capacity-4 boards returned null).
-- But `Solver.solve` still has the **5-bit era guard** `if (ids.length > 30 || board.capacity > _maxLayers) return null;` with `_maxLayers = 5`, and the doc comment still says five bits.
-- With 4-bit packing the guard MUST be `ids.length > 14 || board.capacity > 6` (colour id + 1 must fit in 4 bits; capacity 6 = 24 bits). With colours > 14 it must return null and the greedy hint is used. Set `_maxLayers = 6` and fix the comments.
-- `solve` renumbers the board's colours to 0, 1, 2 ... before packing (that part is good and needed, colour ids go up to 19).
-- After the fix run `flutter analyze` and `flutter test` (all 37 should pass).
-
-### 2.1 Hint is unreliable on big boards
-The solver cannot solve boards with more than 14 colours (and most big boards run out of nodes). Then `Solver.hint` uses `_greedy` (picks the pour that minimises a "potential": 3 per extra bottle a colour is spread over + 1 per unit sitting above a different colour). Simulation (follow the hint until the board is won):
-- With ≤ 14 colours it won 28/28 sample levels at about par moves.
-- With 20 colours it won only ~9/23: it loops (300 moves) or walks into a dead end (no useful move).
-Needed: a better hint for big boards. Ideas: beam search / weighted search over unpacked boards using the potential as heuristic; or a 2-ply lookahead; avoid returning a move that undoes the previous one; detect dead ends. The solver's own heuristic (`changes + mixed`) is the original one; a "potential"-style heuristic with weight 3 made small boards worse, so do not just swap it in. Always re-run the simulation (follow hints on levels 13, 26, … 299) and require ~100% wins.
-`paidHint` returns null only when `GameEngine.isStuck`; then the game says "Undo a few moves".
+### 2.0/2.1 Solver and hint — DONE (Step 0/1 finished)
+- `solver.dart` is stable: 4-bit packing, colours renumbered 0, 1, 2 ... before the search, returns null for more than 14 colours or capacity above 6. `Solver.potential(board)` is the "how sorted" score, `Solver.boardKey` is a canonical board key.
+- **`lib/game/hint_planner.dart` (`HintPlanner`) is the hint used by the game.** In order: the level's own solution line (the starting board is always on it) → searched solution for small boards → beam search (width 10, depth 150, ranked by `Solver.potential`) → "undo N moves" back to the latest board on the level's line. Every move it returns belongs to a line checked to a win; the undo advice costs no gems. `test/game/hint_planner_test.dart` plays 23 levels with 3 random wrong turns first and requires a win by hints alone.
+- `game_screen.dart` creates the planner in `_install` and `_hint` uses it (an undo hint shows "Undo N moves" and pulses the Undo button; gems are charged only for a real move hint).
+- `paidHint` in `rewards.dart` and the greedy `Solver.hint` still exist (greedy alone wins only about 12 of 23 big levels; it is no longer used by the game).
+- Possible polish: the beam search runs on the UI thread (up to ~0.2 s on a PC, maybe ~1 s on a phone); move it to an isolate if it feels slow. Undo advice may need more than the 3 free undos.
 
 ### 2.2 Difficulty plateau and par
 After level ~100 par stays around 44–62; levels 100–300 feel alike (bottles and colours are at the maximum). The generator stops when no more reverse peels are possible. `par` for big boards is the length of the reverse-shuffle line (not the true minimum), so 3 stars are easy there. Improve later (more scramble, mixed capacities, fewer duplicate colours).
@@ -82,9 +74,12 @@ After level ~100 par stays around 44–62; levels 100–300 feel alike (bottles 
 
 ## 4. Remaining work, in order
 
-### Step 0 – Solver fix and better hint (section 2.0 and 2.1)
+### Step 0 – Solver fix and better hint — DONE (see 2.0/2.1)
 
-### Step 1 – Save data and progress
+### Step 1 – Save data and progress (PARTLY DONE)
+Done: `lib/core/save_data.dart` (`SaveData`, `DailyState`, `InProgress`, JSON key `save_v1`, tolerant reading, migration from the old separate preference keys), `AppPrefs` now stores everything in that one document (same method names), and **the board is resumed**: `game_screen.dart` saves `InProgress` after every pour/undo/extra bottle, clears it on win/restart, and `lib/game/resume.dart` (`restoreProgress`) accepts a saved board only if it matches the generated level (same level, capacity, colours, bottle count). A saved stuck board shows the Level Failed popup again. Tests: `test/core/*`, `test/game/resume_test.dart`.
+Still to do here: stars per level (saved field `stars` exists, nothing writes it yet), level map from real data (300 levels), Profile/Stats from real counters (`levelsCompleted`, `totalMoves`, `DailyState.bestStreak` exist in `SaveData` but are not updated yet).
+
 - One `SaveData` model as JSON (key `save_v1`), migrate the existing `AppPrefs` values on first launch.
 - **Resume the board after every move** (app killed → same board, moves, undo credits, extra-bottle flag, hint state not needed).
 - Level map from real data (current level, stars per level). Profile/Stats screens from real counters (levels completed, total moves, best streak).
