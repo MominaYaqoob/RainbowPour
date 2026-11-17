@@ -73,6 +73,13 @@ void main() {
     expect(totals.moves, 24);
   });
 
+  test('the first run day is stored once and never changes', () async {
+    expect(await AppPrefs.firstRunDay(DateTime(2026, 11, 10, 9)), '2026-11-10');
+    expect(await AppPrefs.firstRunDay(DateTime(2026, 12, 25)), '2026-11-10');
+    AppPrefs.resetForTest();
+    expect(await AppPrefs.firstRunDay(DateTime(2027, 1, 1)), '2026-11-10');
+  });
+
   test('gems never go below zero', () async {
     SharedPreferences.setMockInitialValues({});
     await AppPrefs.addGems(50);

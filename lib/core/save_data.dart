@@ -19,6 +19,12 @@ class SaveData {
   int avatar = 0;
   bool tutorialDone = false;
 
+  /// Local day (`yyyy-m-d`) the game was first opened. Set once, never changed.
+  String? firstRunDay;
+
+  /// Local day (`yyyy-m-d`) the in-app review was last requested.
+  String? reviewAskedDay;
+
   // ---- economy
   int gems = 0;
 
@@ -85,6 +91,8 @@ class SaveData {
     'nickname': nickname,
     'avatar': avatar,
     'tutorialDone': tutorialDone,
+    'firstRunDay': firstRunDay,
+    'reviewAskedDay': reviewAskedDay,
     'gems': gems,
     'owned': owned.toList()..sort(),
     'skin': skin,
@@ -114,6 +122,12 @@ class SaveData {
     s.nickname = json['nickname'] is String ? json['nickname'] as String : null;
     s.avatar = _int(json['avatar'], 0);
     s.tutorialDone = _bool(json['tutorialDone'], false);
+    s.firstRunDay = json['firstRunDay'] is String
+        ? json['firstRunDay'] as String
+        : null;
+    s.reviewAskedDay = json['reviewAskedDay'] is String
+        ? json['reviewAskedDay'] as String
+        : null;
     s.gems = _int(json['gems'], 0);
     s.owned = {
       if (json['owned'] is List)

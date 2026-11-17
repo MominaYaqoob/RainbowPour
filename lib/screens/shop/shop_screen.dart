@@ -4,16 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../ads/rewarded_flow.dart';
+import '../../core/anim.dart';
 import '../../core/app_colors.dart';
 import '../../widgets/background_theme.dart';
 import '../../widgets/bottle_shape.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/gem_icon.dart';
+import '../../analytics/analytics_service.dart';
 import '../../core/app_prefs.dart';
 import '../../widgets/info_dialog.dart';
 import '../../widgets/page_shell.dart';
 import '../../widgets/water_button.dart';
+import '../challenge/daily_challenge_screen.dart';
+import '../daily/daily_reward_screen.dart';
+import '../levels/level_map_screen.dart';
 import 'not_enough_gems_dialog.dart';
 
 /// Shop (UI only): free gems by ad, bottle skins and backgrounds.
@@ -91,6 +96,7 @@ class _ShopScreenState extends State<ShopScreen>
     }
     if (!await AppPrefs.spendGems(cost)) return;
     await AppPrefs.addOwned(id);
+    AnalyticsService.instance.shopBuy(id, cost);
     if (!mounted) return;
     setState(() {
       _gems -= cost;
@@ -222,6 +228,7 @@ class _ShopScreenState extends State<ShopScreen>
     await RewardedFlow.run(
       context,
       gemCap: true,
+      placement: 'shop_gems',
       onReward: () async {
         final ok = await AppPrefs.watchedGemAd();
         if (!mounted) return;
@@ -229,6 +236,7 @@ class _ShopScreenState extends State<ShopScreen>
           await InfoDialog.dailyLimit(context);
           return;
         }
+        AnalyticsService.instance.gemEarn('ad_gems', 10);
         final watched = await AppPrefs.adsToday();
         final gems = await AppPrefs.gems();
         if (!mounted) return;
@@ -344,24 +352,47 @@ class _ShopScreenState extends State<ShopScreen>
         const SizedBox(height: 20),
         _label('OTHER WAYS'),
         const SizedBox(height: 10),
-        _tip(Icons.card_giftcard_rounded, 'Daily reward', 'Log in every day'),
+        _tip(
+          Icons.card_giftcard_rounded,
+          'Daily reward',
+          'Log in every day',
+          () => _open(const DailyRewardScreen()),
+        ),
         const SizedBox(height: 10),
         _tip(
           Icons.emoji_events_rounded,
           'Complete levels',
           'Earn gems as you win',
+          () => _open(const LevelMapScreen()),
         ),
         const SizedBox(height: 10),
         _tip(
           Icons.local_fire_department_rounded,
           'Daily challenge',
           'Finish it for a big bonus',
+          () => _open(const DailyChallengeScreen()),
         ),
       ],
     );
   }
 
-  Widget _tip(IconData icon, String title, String sub) {
+  /// Opens another screen from the "Other ways" list, then refreshes the gem
+  /// count (the player may have claimed or won gems there).
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context).push(fadeRoute(page));
+    final g = await AppPrefs.gems();
+    if (mounted) setState(() => _gems = g);
+  }
+
+  Widget _tip(IconData icon, String title, String sub, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: _tipCard(icon, title, sub),
+    );
+  }
+
+  Widget _tipCard(IconData icon, String title, String sub) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -395,6 +426,11 @@ class _ShopScreenState extends State<ShopScreen>
                 ),
               ],
             ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: Colors.white.withValues(alpha: 0.6),
+            size: 24,
           ),
         ],
       ),

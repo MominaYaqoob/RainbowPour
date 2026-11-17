@@ -189,4 +189,28 @@ void main() {
     ColorblindMode.set(false);
     expect(on, isNot(off));
   });
+
+  testWidgets('small bottles (challenge board) still show a symbol on every '
+      'layer, and the off look is unchanged', (tester) async {
+    final key = GlobalKey();
+    const layers = [2, 7, 11, 16];
+    final off = await render(
+      tester,
+      key: key,
+      bottle: const ConeBottle(layers: layers, width: 24, symbols: false),
+    );
+    final on = await render(
+      tester,
+      key: key,
+      bottle: const ConeBottle(layers: layers, width: 24, symbols: true),
+    );
+    expect(on, isNot(off));
+    // a bottle with three layers has fewer symbols than one with four
+    final three = await render(
+      tester,
+      key: key,
+      bottle: const ConeBottle(layers: [2, 7, 11], width: 24, symbols: true),
+    );
+    expect(three, isNot(on));
+  });
 }

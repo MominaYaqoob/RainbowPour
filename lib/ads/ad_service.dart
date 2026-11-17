@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../analytics/analytics_service.dart';
 import 'ad_config.dart';
 import 'ads_gateway.dart';
 import 'gateway_loader.dart';
@@ -163,20 +164,24 @@ class AdService {
   /// Shows an interstitial if the gate allows it and one is ready; completes
   /// when it is closed. Returns at once (no delay) when there is nothing to
   /// show or it fails. Call it only when the player moves on after a win.
-  Future<void> maybeShowInterstitial({required int level}) async {
-    if (!_supported || !_canRequestAds || _showingInterstitial) return;
-    if (_showingRewarded || !gate.shouldShow(level: level)) return;
+  /// Returns true only when an interstitial was shown and closed.
+  Future<bool> maybeShowInterstitial({required int level}) async {
+    if (!_supported || !_canRequestAds || _showingInterstitial) return false;
+    if (_showingRewarded || !gate.shouldShow(level: level)) return false;
     if (!_interstitialReady) {
       _preloadInterstitial();
-      return;
+      return false;
     }
     _showingInterstitial = true;
     _interstitialReady = false;
     try {
       gate.markShown();
+      AnalyticsService.instance.interstitialShown(level);
       await _gateway.showLoadedInterstitial();
+      return true;
     } catch (error, stack) {
       _log(error, stack);
+      return false;
     } finally {
       _showingInterstitial = false;
       _preloadInterstitial();
@@ -206,6 +211,10 @@ class AdService {
     if (!_supported) return;
     try {
       await _gateway.showPrivacyOptions();
+      // The player may have changed the choice: follow it (analytics listens).
+      final allowed = await _gateway.readCanRequestAds();
+      _canRequestAds = allowed;
+      adsReady.value = allowed && _sdkStarted;
     } catch (error, stack) {
       _log(error, stack);
     }

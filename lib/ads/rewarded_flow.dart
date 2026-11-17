@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../core/app_prefs.dart';
 import '../widgets/info_dialog.dart';
+import '../analytics/analytics_service.dart';
 import 'ad_service.dart';
 
 /// One rewarded-ad tap: busy guard, daily gem cap, and the not-ready dialog.
@@ -20,6 +21,7 @@ class RewardedFlow {
     BuildContext context, {
     AdService? ads,
     bool gemCap = false,
+    String placement = 'unknown',
     required Future<void> Function() onReward,
   }) async {
     if (_busy) return RewardedResult.dismissed;
@@ -30,6 +32,7 @@ class RewardedFlow {
         return RewardedResult.notReady;
       }
       final result = await (ads ?? AdService.instance).showRewarded();
+      AnalyticsService.instance.rewardedAd(placement, _label(result));
       // An earned reward is paid even if the player left the screen while the
       // ad was open: [onReward] must check `mounted` itself before touching UI.
       if (result == RewardedResult.rewarded) {
@@ -51,3 +54,10 @@ class RewardedFlow {
     }
   }
 }
+
+String _label(RewardedResult r) => switch (r) {
+  RewardedResult.rewarded => 'earned',
+  RewardedResult.dismissed => 'closed',
+  RewardedResult.notReady => 'not_ready',
+  RewardedResult.error => 'error',
+};

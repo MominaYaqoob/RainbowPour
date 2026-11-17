@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../core/anim.dart';
 import '../core/app_prefs.dart';
+import '../screens/shop/shop_screen.dart';
 import 'gem_pill.dart';
 import 'night_background.dart';
 
@@ -57,9 +59,19 @@ class _PageShellState extends State<PageShell> {
   @override
   void initState() {
     super.initState();
+    _refreshGems();
+  }
+
+  void _refreshGems() {
     AppPrefs.gems().then((g) {
       if (mounted) setState(() => _gems = g);
     });
+  }
+
+  /// The gem pill opens the Shop, then the balance is read again.
+  Future<void> _openShop() async {
+    await Navigator.of(context).push<void>(fadeRoute(const ShopScreen()));
+    _refreshGems();
   }
 
   @override
@@ -116,9 +128,7 @@ class _PageShellState extends State<PageShell> {
                     widget.showGems
                         ? GemPill(
                             gems: widget.gems ?? _gems,
-                            onTap: widget.gemsTappable
-                                ? () => showSoon(context, 'The shop')
-                                : null,
+                            onTap: widget.gemsTappable ? _openShop : null,
                           )
                         : const SizedBox(width: 40),
                   ],

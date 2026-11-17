@@ -20,11 +20,11 @@ class GameSplash extends StatefulWidget {
 class _GameSplashState extends State<GameSplash> with TickerProviderStateMixin {
   late final AnimationController _fill = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 4),
+    duration: const Duration(milliseconds: 2400),
   )..repeat();
   late final AnimationController _load = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 3200),
+    duration: const Duration(milliseconds: 1600),
   );
 
   @override

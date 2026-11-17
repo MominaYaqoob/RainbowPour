@@ -4,6 +4,18 @@ import 'package:rainbow_pour/game/rewards.dart';
 import 'package:rainbow_pour/game/solver.dart';
 
 void main() {
+  test('only the first win of a level pays gems, a replay pays nothing', () {
+    for (final stars in [1, 2, 3]) {
+      expect(
+        Rewards.winGems(stars: stars, firstClear: true),
+        Rewards.gemsForStars(stars),
+      );
+      expect(Rewards.winGems(stars: stars, firstClear: false), 0);
+    }
+    expect(Rewards.winGems(stars: 3, firstClear: true), 20);
+    expect(Rewards.winGems(stars: 1, firstClear: true), 10);
+  });
+
   test('win gems follow the star count', () {
     expect(Rewards.gemsForStars(Stars.count(level: 2, par: 4, moves: 40)), 20);
     expect(Rewards.gemsForStars(Stars.count(level: 8, par: 10, moves: 13)), 20);

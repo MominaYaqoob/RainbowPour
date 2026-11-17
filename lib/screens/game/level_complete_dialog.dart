@@ -202,32 +202,45 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
             ),
           ),
           const SizedBox(height: 14),
-          Opacity(
-            opacity: seg(v, 0.5, 0.65),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 6, 18, 6),
-              decoration: BoxDecoration(
-                color: AppColors.gold,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white, width: 1.6),
+          if (widget.gems <= 0)
+            Opacity(
+              opacity: seg(v, 0.5, 0.65),
+              child: Text(
+                'Gems are paid on the first win only',
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withValues(alpha: 0.75),
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const GemIcon(size: 24),
-                  const SizedBox(width: 8),
-                  Text(
-                    '+$gems',
-                    style: GoogleFonts.outfit(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF4A2A00),
+            )
+          else
+            Opacity(
+              opacity: seg(v, 0.5, 0.65),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 6, 18, 6),
+                decoration: BoxDecoration(
+                  color: AppColors.gold,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white, width: 1.6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const GemIcon(size: 24),
+                    const SizedBox(width: 8),
+                    Text(
+                      '+$gems',
+                      style: GoogleFonts.outfit(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF4A2A00),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 16),
           WaterButton(
             width: math.min(w - 40, 270),

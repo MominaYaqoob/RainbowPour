@@ -61,14 +61,26 @@ abstract final class DifficultyCurve {
   /// outside 1..[maxLevel], so [specFor] rejects it and [isTutorial] is false.
   static const challengeLevel = 0;
 
+  /// First level that uses [waveBottles]. Levels 1 to 99 are unchanged.
+  static const waveStartLevel = 100;
+
+  /// Bottle count for levels 100, 101, ... 109, then the same ten again:
+  /// it rises to the maximum (25), then a rest (20 and 15). Colours follow the
+  /// bottles (at most one colour per full bottle, 20 at most).
+  static const waveBottles = [19, 21, 22, 23, 24, 25, 25, 25, 20, 15];
+
   static LevelSpec specFor(int level) {
     if (level < 1 || level > maxLevel) {
       throw ArgumentError.value(level, 'level', 'expected 1..$maxLevel');
     }
     var colors = _colors(level);
     var bottles = _bottles(level);
-    // Every 5th level after the 5th is a breather: fewer colours and bottles.
-    if (level > 5 && level % 5 == 0) {
+    if (level >= waveStartLevel) {
+      // From level 100 the bottle count follows a 10-level wave (harder, then
+      // a rest), so the late levels do not all look the same.
+      bottles = waveBottles[(level - waveStartLevel) % waveBottles.length];
+    } else if (level > 5 && level % 5 == 0) {
+      // Every 5th level after the 5th is a breather: fewer colours and bottles.
       colors = math.max(3, colors - 2);
       bottles = math.max(colors + 2, bottles - 3);
     }

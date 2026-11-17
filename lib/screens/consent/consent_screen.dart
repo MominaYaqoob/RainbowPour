@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../ads/ad_service.dart';
 import '../../core/anim.dart';
 import '../../core/app_colors.dart';
+import '../../core/app_links.dart';
 import '../../core/app_prefs.dart';
 import '../../widgets/cone_bottle.dart';
 import '../../widgets/entrance.dart';
@@ -67,39 +68,10 @@ class _ConsentScreenState extends State<ConsentScreen>
   }
 
   void _showDoc(String title) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF10175E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 22, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.outfit(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'The full text will be linked here before the game is released.',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                height: 1.4,
-                color: Colors.white70,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    final url = title == 'Privacy Policy'
+        ? AppLinks.privacyPolicyUrl
+        : AppLinks.termsUrl;
+    AppLinks.open(context, url, title: title);
   }
 
   @override
@@ -257,7 +229,7 @@ class _ConsentScreenState extends State<ConsentScreen>
         ),
         SizedBox(height: 10 * s),
         Text(
-          'Rainbow Pour is free and shows ads. You must be 13 or older to play.',
+          'Rainbow Pour is free and shows ads. With your consent it also collects anonymous usage and crash data to improve the game. You must be 13 or older to play.',
           textAlign: TextAlign.center,
           style: GoogleFonts.outfit(
             fontSize: 12 * s,

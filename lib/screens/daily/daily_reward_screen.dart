@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../ads/ad_widgets.dart';
 import '../../ads/rewarded_flow.dart';
 import '../../core/app_colors.dart';
+import '../../analytics/analytics_service.dart';
 import '../../core/app_prefs.dart';
 import '../../core/daily_reward.dart';
 import '../../widgets/entrance.dart';
@@ -26,7 +27,7 @@ class DailyRewardScreen extends StatefulWidget {
 }
 
 class _DailyRewardScreenState extends State<DailyRewardScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _in = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1500),
@@ -52,6 +53,7 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _open();
   }
 
@@ -96,6 +98,10 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
       InfoDialog.clockChanged(context);
       return;
     }
+    if (result.gems > 0) {
+      AnalyticsService.instance.dailyRewardClaim(result.gems);
+      AnalyticsService.instance.gemEarn('daily_reward', result.gems);
+    }
     await _load();
     if (!mounted) return;
     setState(() => _busy = false);
@@ -112,6 +118,7 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
     setState(() => _busy = true);
     await RewardedFlow.run(
       context,
+      placement: 'daily_double',
       onReward: () async {
         final added = await AppPrefs.doubleDailyReward(_now());
         if (added > 0) await _load();
@@ -121,8 +128,15 @@ class _DailyRewardScreenState extends State<DailyRewardScreen>
     setState(() => _busy = false);
   }
 
+  /// Coming back to the app (maybe after midnight): read the date again.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _in.dispose();
     _loop.dispose();
     super.dispose();

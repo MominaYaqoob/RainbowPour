@@ -5,13 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../ads/ad_service.dart';
+import '../../analytics/analytics_service.dart';
 import '../../ads/rewarded_flow.dart';
+import '../../core/anim.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
 import '../../core/audio_service.dart';
 import '../../core/challenge_timer.dart';
 import '../../core/daily_challenge.dart' as daily_challenge;
 import '../../core/haptics.dart';
+import '../../core/review_prompt.dart';
 import '../../core/save_data.dart';
 import '../../game/difficulty.dart';
 import '../../game/engine.dart';
@@ -33,6 +36,7 @@ import '../../widgets/info_dialog.dart';
 import '../../widgets/night_background.dart';
 import '../../widgets/water_button.dart';
 import '../shop/not_enough_gems_dialog.dart';
+import '../shop/shop_screen.dart';
 import 'board_layout.dart';
 import 'level_complete_dialog.dart';
 import 'level_failed_dialog.dart';
@@ -123,6 +127,10 @@ class _GameScreenState extends State<GameScreen>
   UndoCredits _undos = UndoCredits();
   ExtraBottle _extra = ExtraBottle();
   bool _rewarded = false;
+
+  /// The level or challenge reached a result (win, time up), so leaving the
+  /// screen is not a "quit" for analytics.
+  bool _runEnded = false;
 
   /// Hint: bottle to pour from and into (glow), -1 = none.
   int _hintFrom = -1;
@@ -250,6 +258,12 @@ class _GameScreenState extends State<GameScreen>
   }) {
     final restored = restoreProgress(resume, generated);
     _resumed = restored != null;
+    _runEnded = false;
+    if (_isChallenge) {
+      AnalyticsService.instance.challengeStart();
+    } else if (!_resumed) {
+      AnalyticsService.instance.levelStart(level);
+    }
     _pourToken++;
     _pour.stop();
     _celeb.stop();
@@ -342,11 +356,30 @@ class _GameScreenState extends State<GameScreen>
     });
   }
 
+  /// Opens the Shop from the game (gem pill, "Get gems"). The challenge clock
+  /// waits while the Shop is open, and the gem count is refreshed on return.
+  void _openShop() {
+    if (_busy) return;
+    Haptics.tap();
+    _openDialog(() async {
+      await Navigator.of(context).push<void>(fadeRoute(const ShopScreen()));
+      final gems = await AppPrefs.gems();
+      if (mounted) setState(() => _gems = gems);
+    });
+  }
+
   /// The quiet moment after a win: an interstitial may play if the gate
   /// allows it (never in levels 1 to 3, one per three levels, 90 s apart),
   /// then the next level starts. With no ad ready there is no delay.
   Future<void> _nextAfterAd() async {
-    await AdService.instance.maybeShowInterstitial(level: _level);
+    final adShown = await AdService.instance.maybeShowInterstitial(
+      level: _level,
+    );
+    // A rating request is another interruption: never right after an ad. It
+    // only follows a win (this is the quiet moment), never the challenge.
+    if (!adShown && !_isChallenge) {
+      unawaited(ReviewPrompt.maybeAsk(levelWon: _level));
+    }
     if (!mounted) return;
     await _next();
   }
@@ -492,6 +525,11 @@ class _GameScreenState extends State<GameScreen>
     _rewarded = true;
     if (_isChallenge) {
       _challengeOver = true;
+      _runEnded = true;
+      AnalyticsService.instance.challengeEnd(
+        'win',
+        secondsLeft: _challengeTimer?.remaining.inSeconds,
+      );
       _challengeTimer?.pause();
       Haptics.success();
       AudioService.instance.play(Sfx.win);
@@ -542,10 +580,14 @@ class _GameScreenState extends State<GameScreen>
       AppPrefs.setFlag('tutorial', true);
     }
     final stars = Stars.count(level: _level, par: _par, moves: play.moves);
-    final reward = Rewards.gemsForStars(stars);
+    // Only the first win of a level pays gems; a replay pays nothing.
+    final firstClear = !(await AppPrefs.stars()).containsKey(_level);
+    final reward = Rewards.winGems(stars: stars, firstClear: firstClear);
     Haptics.success();
     AudioService.instance.play(Sfx.win);
-    final total = await AppPrefs.addGems(reward);
+    final total = reward > 0
+        ? await AppPrefs.addGems(reward)
+        : await AppPrefs.gems();
     // best stars, completed count, total moves and the next level
     await AppPrefs.recordWin(
       level: _level,
@@ -553,6 +595,14 @@ class _GameScreenState extends State<GameScreen>
       moves: play.moves,
       maxLevel: DifficultyCurve.maxLevel,
     );
+    _runEnded = true;
+    AnalyticsService.instance.levelEnd(
+      _level,
+      success: true,
+      stars: stars,
+      moves: play.moves,
+    );
+    if (reward > 0) AnalyticsService.instance.gemEarn('level_win', reward);
     AdService.instance.onLevelCompleted();
     if (!mounted) return;
     setState(() => _gems = total);
@@ -562,7 +612,7 @@ class _GameScreenState extends State<GameScreen>
       stars: stars,
       moves: play.moves,
       gems: reward,
-      offerDouble: _level != 1,
+      offerDouble: _level != 1 && reward > 0,
       onDouble: () => _doubleWin(reward),
       onNext: () {
         Navigator.of(context).pop();
@@ -579,6 +629,9 @@ class _GameScreenState extends State<GameScreen>
   void _showStuck() {
     Haptics.fail();
     AudioService.instance.play(Sfx.fail);
+    if (!_isChallenge) {
+      AnalyticsService.instance.levelStuck(_level, moves: _play?.moves);
+    }
     _openDialog(
       () => LevelFailedDialog.show(
         context,
@@ -601,7 +654,7 @@ class _GameScreenState extends State<GameScreen>
         onWatchAd: () {
           if (_extra.used || _tutorialMoves != null) return;
           Navigator.of(context).pop();
-          _watch(_grantFreeBottle);
+          _watch(_grantFreeBottle, placement: 'extra_bottle');
         },
       ),
     );
@@ -623,7 +676,7 @@ class _GameScreenState extends State<GameScreen>
               _undos.grantWatchedAd();
               if (!mounted) return;
               await _undo();
-            });
+            }, placement: 'extra_undo');
           },
         ),
       );
@@ -670,6 +723,7 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     if (!await AppPrefs.spendGems(cost)) return;
+    AnalyticsService.instance.gemSpend('hint', cost);
     if (!mounted) return;
     setState(() {
       _gems -= cost;
@@ -707,6 +761,7 @@ class _GameScreenState extends State<GameScreen>
       _extra.used = false;
       return;
     }
+    AnalyticsService.instance.gemSpend('extra_bottle', cost);
     if (!mounted) return;
     setState(() {
       _gems -= cost;
@@ -728,11 +783,11 @@ class _GameScreenState extends State<GameScreen>
         have: _gems,
         onGetGems: () {
           Navigator.of(context).pop();
-          _soon('The shop');
+          _openShop();
         },
         onWatchAd: () {
           Navigator.of(context).pop();
-          _watch(_grantGemAd, gems: true);
+          _watch(_grantGemAd, gems: true, placement: 'gems_game');
         },
       ),
     );
@@ -751,6 +806,18 @@ class _GameScreenState extends State<GameScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clockTick?.cancel();
+    final moves = _play?.moves ?? 0;
+    if (!_runEnded && moves > 0) {
+      // left the board without finishing: this is where players drop off
+      if (_isChallenge) {
+        AnalyticsService.instance.challengeEnd(
+          'quit',
+          secondsLeft: _challengeTimer?.remaining.inSeconds,
+        );
+      } else {
+        AnalyticsService.instance.levelQuit(_level, moves: moves);
+      }
+    }
     _in.dispose();
     _loop.dispose();
     _pour.dispose();
@@ -763,11 +830,13 @@ class _GameScreenState extends State<GameScreen>
   Future<RewardedResult> _watch(
     Future<void> Function() onReward, {
     bool gems = false,
+    String placement = 'game',
   }) {
     _holdTimer();
     return RewardedFlow.run(
       context,
       gemCap: gems,
+      placement: placement,
       onReward: onReward,
     ).whenComplete(() {
       if (mounted) _releaseTimer();
@@ -779,8 +848,9 @@ class _GameScreenState extends State<GameScreen>
     await _watch(() async {
       final total = await AppPrefs.addGems(base);
       granted = true;
+      AnalyticsService.instance.gemEarn('win_double', base);
       if (mounted) setState(() => _gems = total);
-    });
+    }, placement: 'win_double');
     return granted;
   }
 
@@ -791,6 +861,7 @@ class _GameScreenState extends State<GameScreen>
       await InfoDialog.dailyLimit(context);
       return;
     }
+    AnalyticsService.instance.gemEarn('ad_gems', 10);
     final total = await AppPrefs.gems();
     if (!mounted) return;
     setState(() => _gems = total);
@@ -833,6 +904,8 @@ class _GameScreenState extends State<GameScreen>
   void _onTimeUp() {
     if (!_isChallenge || _timeUp || _challengeOver) return;
     _timeUp = true;
+    _runEnded = true;
+    AnalyticsService.instance.challengeEnd('time_up', secondsLeft: 0);
     _challengeTimer?.pause();
     AudioService.instance.play(Sfx.fail);
     setState(() {});
@@ -971,6 +1044,19 @@ class _GameScreenState extends State<GameScreen>
   @override
   Widget build(BuildContext context) {
     _f = (MediaQuery.sizeOf(context).height / 760).clamp(0.78, 1.0);
+    // Android Back during play opens the pause menu instead of throwing the
+    // level (or a running challenge) away. It leaves freely while loading or
+    // once the level has a result.
+    return PopScope(
+      canPop: _loading || _rewarded || _challengeOver || _timeUp,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _pause();
+      },
+      child: _gameScaffold(),
+    );
+  }
+
+  Widget _gameScaffold() {
     return Scaffold(
       body: NightBackground(
         theme: BackgroundSkin.themeFor(_level),
@@ -1112,7 +1198,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               const Spacer(),
-              GemPill(gems: _gems, onTap: () => _soon('The shop')),
+              GemPill(gems: _gems, onTap: _openShop),
             ],
           ),
           if (_isChallenge)

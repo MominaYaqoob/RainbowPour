@@ -264,6 +264,23 @@ abstract final class AppPrefs {
   static Future<String?> nickname() async => (await _load()).nickname;
   static Future<int> avatar() async => (await _load()).avatar;
 
+  /// The local day (`yyyy-m-d`) the game was first opened. The first call
+  /// stores [now]'s day, every later call returns that same day.
+  static Future<String> firstRunDay(DateTime now) => _update((d) {
+    return d.firstRunDay ??= reward.dayKey(now);
+  });
+
+  /// The local day (`yyyy-m-d`) the in-app review was last requested, or null.
+  static Future<String?> reviewAskedDay() async =>
+      (await _load()).reviewAskedDay;
+
+  /// Remembers that the review was requested on [now]'s day.
+  static Future<void> markReviewAsked(DateTime now) =>
+      _update((d) => d.reviewAskedDay = reward.dayKey(now));
+
+  /// The latest device time seen (for the clock check), 0 if none.
+  static Future<int> lastSeenMs() async => (await _load()).daily.lastSeenMs;
+
   // ---- the level being played
 
   /// The unfinished level saved after the last move, or null.

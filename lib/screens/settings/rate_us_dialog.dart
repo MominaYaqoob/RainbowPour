@@ -5,11 +5,15 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_colors.dart';
+import '../../core/app_links.dart';
+import '../../core/review_prompt.dart';
+import '../../widgets/info_dialog.dart';
 import '../../widgets/game_dialog.dart';
 import '../../widgets/game_text.dart';
 import '../../widgets/water_button.dart';
 
-/// "Rate us" popup (UI only): pick 1 to 5 stars, then rate or postpone.
+/// "Rate us" popup: pick 1 to 5 stars. 4 or 5 go to the store, 1 to 3 get a
+/// thank-you.
 class RateUsDialog extends StatefulWidget {
   const RateUsDialog({super.key});
 
@@ -31,6 +35,31 @@ class _RateUsDialogState extends State<RateUsDialog> {
     'Great, thank you!',
     'You are awesome!',
   ];
+
+  /// 4 or 5 stars go to the store (the in-app review sheet, or the store page
+  /// if the sheet is not available). 1 to 3 stars only get a thank-you: the
+  /// player is not sent to a public rating page from here.
+  Future<void> _submit() async {
+    final stars = _stars;
+    if (stars == 0) return;
+    // The dialog is about to close; keep what is needed from its context.
+    final nav = Navigator.of(context);
+    nav.pop();
+    final host = nav.context;
+    if (stars <= 3) {
+      await InfoDialog.show(
+        host,
+        icon: Icons.favorite_rounded,
+        title: 'Thank you!',
+        message: 'We read every rating. We will keep improving Rainbow Pour.',
+      );
+      return;
+    }
+    final shown = await ReviewPrompt.rateNow();
+    if (!shown && host.mounted) {
+      await AppLinks.open(host, AppLinks.playStoreUrl, title: 'Rate us');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,12 +126,10 @@ class _RateUsDialogState extends State<RateUsDialog> {
           const SizedBox(height: 16),
           WaterButton(
             width: math.min(MediaQuery.sizeOf(context).width - 100, 270),
-            label: 'Rate us',
+            label: _stars > 0 && _stars <= 3 ? 'Send' : 'Rate us',
             icon: Icons.favorite_rounded,
             dim: _stars == 0,
-            onPressed: () {
-              if (_stars > 0) Navigator.of(context).pop();
-            },
+            onPressed: _submit,
           ),
           const SizedBox(height: 6),
           GestureDetector(

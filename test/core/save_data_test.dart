@@ -13,6 +13,23 @@ void main() {
     expect(s.stars, isEmpty);
   });
 
+  test('the first run day survives encode and decode, old saves have none', () {
+    final s = SaveData()..firstRunDay = '2026-11-17';
+    expect(SaveData.tryDecode(s.encode())!.firstRunDay, '2026-11-17');
+    expect(SaveData.fromJson(const {'level': 4}).firstRunDay, isNull);
+    expect(SaveData.fromJson(const {'firstRunDay': 5}).firstRunDay, isNull);
+  });
+
+  test('the review day survives encode and decode, old saves have none', () {
+    final s = SaveData()..reviewAskedDay = '2026-11-17';
+    expect(SaveData.tryDecode(s.encode())!.reviewAskedDay, '2026-11-17');
+    expect(SaveData.fromJson(const {'level': 4}).reviewAskedDay, isNull);
+    expect(
+      SaveData.fromJson(const {'reviewAskedDay': 7}).reviewAskedDay,
+      isNull,
+    );
+  });
+
   test('everything survives encode and decode', () {
     final s = SaveData()
       ..consentDone = true

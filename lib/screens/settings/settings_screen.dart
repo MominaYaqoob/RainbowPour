@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../ads/ad_service.dart';
 import '../../core/app_colors.dart';
+import '../../core/app_links.dart';
 import '../../core/app_prefs.dart';
 import '../../core/audio_service.dart';
 import '../../core/colorblind.dart';
@@ -157,44 +158,27 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _adPrivacy();
               },
             ),
-            _link(Icons.lock_rounded, 'Privacy Policy', null, const [
-              Color(0xFF8EF0A0),
-              Color(0xFF2DBE60),
-            ]),
-            _link(Icons.description_rounded, 'Terms of Service', null, const [
-              Color(0xFFFF9AB0),
-              Color(0xFFE0245B),
-            ]),
-          ]),
-          const SizedBox(height: 18),
-          _section('UI PREVIEW (DEMO ONLY)', 2, [
             _link(
-              Icons.hourglass_empty_rounded,
-              'Ad not ready',
+              Icons.lock_rounded,
+              'Privacy Policy',
               null,
-              const [Color(0xFFFFF27A), Color(0xFFFFA000)],
-              onTap: () => InfoDialog.adNotReady(context),
+              const [Color(0xFF8EF0A0), Color(0xFF2DBE60)],
+              onTap: () => AppLinks.open(
+                context,
+                AppLinks.privacyPolicyUrl,
+                title: 'Privacy Policy',
+              ),
             ),
             _link(
-              Icons.event_busy_rounded,
-              'Daily ad limit',
+              Icons.description_rounded,
+              'Terms of Service',
               null,
               const [Color(0xFFFF9AB0), Color(0xFFE0245B)],
-              onTap: () => InfoDialog.dailyLimit(context),
-            ),
-            _link(
-              Icons.schedule_rounded,
-              'Clock changed',
-              null,
-              const [Color(0xFFFF9AB0), Color(0xFFE0245B)],
-              onTap: () => InfoDialog.clockChanged(context),
-            ),
-            _link(
-              Icons.undo_rounded,
-              'Extra undo (ad)',
-              null,
-              const [Color(0xFF7FE9FF), Color(0xFF1FA9FF)],
-              onTap: () => InfoDialog.extraUndo(context, onWatch: () {}),
+              onTap: () => AppLinks.open(
+                context,
+                AppLinks.termsUrl,
+                title: 'Terms of Service',
+              ),
             ),
           ]),
           const SizedBox(height: 22),

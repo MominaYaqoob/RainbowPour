@@ -34,7 +34,25 @@ void main() {
           .where((text) => text.style?.color == AppColors.gold),
       isNotEmpty,
     );
-    expect(find.byIcon(Icons.close_rounded), findsWidgets);
+    // the first day the game is opened: earlier days are not "missed"
+    expect(find.byIcon(Icons.close_rounded), findsNothing);
+  });
+
+  testWidgets('days before the first play are not missed, later ones are', (
+    tester,
+  ) async {
+    final today = DateTime(2026, 6, 18, 10);
+    final data = SaveData()..firstRunDay = '2026-6-10';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(AppPrefs.saveKey, data.encode());
+    AppPrefs.resetForTest();
+
+    await tester.pumpWidget(
+      MaterialApp(home: DailyChallengeScreen(clock: () => today)),
+    );
+    await until(tester, find.text('Play'));
+    // June 10 to 17 were open days nobody played: 8 missed crosses
+    expect(find.byIcon(Icons.close_rounded), findsNWidgets(8));
   });
 
   testWidgets('three finished days show the streak and the week bar', (

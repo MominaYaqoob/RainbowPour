@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:device_preview/device_preview.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'ads/ad_service.dart';
+import 'analytics/analytics_service.dart';
 import 'core/app_prefs.dart';
 import 'core/audio_service.dart';
 import 'core/colorblind.dart';
@@ -33,16 +33,36 @@ Future<void> main() async {
   await Haptics.load();
   await AudioService.instance.load();
   await ColorblindMode.load();
+  // The first day the game was opened (the daily challenge calendar only
+  // marks days from then on as missed).
+  unawaited(AppPrefs.firstRunDay(DateTime.now()).catchError((Object _) => ''));
   // Remember this launch time. A backwards clock must not stop the app.
   unawaited(
     AppPrefs.touchClock(DateTime.now()).catchError((Object _) => false),
   );
-  runApp(
-    DevicePreview(
-      enabled: !kReleaseMode,
-      builder: (context) => const RainbowPourApp(),
-    ),
+  // Crash reports (Crashlytics, release builds, after consent).
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    unawaited(
+      AnalyticsService.instance.recordError(
+        details.exception,
+        details.stack,
+        fatal: true,
+      ),
+    );
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    unawaited(AnalyticsService.instance.recordError(error, stack, fatal: true));
+    // in debug builds let Flutter print the error as usual
+    return !kDebugMode;
+  };
+  // Firebase starts in the background; it collects nothing until consent.
+  unawaited(AnalyticsService.instance.init());
+  AdService.instance.adsReady.addListener(
+    () =>
+        AnalyticsService.instance.setConsent(AdService.instance.adsReady.value),
   );
+  runApp(const RainbowPourApp());
   // Returning players already agreed. First launch waits for ConsentScreen.
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(_initAdsForReturningUser());
@@ -67,8 +87,6 @@ class RainbowPourApp extends StatelessWidget {
     return MaterialApp(
       title: 'Rainbow Pour',
       debugShowCheckedModeBanner: false,
-      locale: DevicePreview.locale(context),
-      builder: DevicePreview.appBuilder,
       theme: base.copyWith(
         textTheme: GoogleFonts.outfitTextTheme(base.textTheme),
       ),

@@ -14,6 +14,11 @@ abstract final class Rewards {
     if (stars == 2) return 15;
     return 10;
   }
+
+  /// Gems for a win. Only the FIRST win of a level pays; a replay pays
+  /// nothing, so levels cannot be farmed for gems.
+  static int winGems({required int stars, required bool firstClear}) =>
+      firstClear ? gemsForStars(stars) : 0;
 }
 
 /// Free undos for one attempt, plus any granted by a watched ad.

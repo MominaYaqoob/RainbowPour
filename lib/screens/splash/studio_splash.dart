@@ -17,7 +17,7 @@ class _StudioSplashState extends State<StudioSplash>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2400),
+    duration: const Duration(milliseconds: 1200),
   );
 
   @override

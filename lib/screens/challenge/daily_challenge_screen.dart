@@ -30,7 +30,7 @@ class DailyChallengeScreen extends StatefulWidget {
 }
 
 class _DailyChallengeScreenState extends State<DailyChallengeScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _in = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
@@ -58,6 +58,9 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
 
   DateTime _today = DateTime.now();
   Set<String> _doneDays = {};
+
+  /// Day the game was first opened. Earlier days are never shown as missed.
+  String? _firstRun;
   int _streak = 0;
   int _weekCount = 0;
   int _gems = 0;
@@ -71,6 +74,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final now = _now();
     _today = DateTime(now.year, now.month, now.day);
     _load();
@@ -80,12 +84,15 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
     final now = _now();
     final savedFuture = AppPrefs.daily();
     final gemsFuture = AppPrefs.gems();
+    final firstFuture = AppPrefs.firstRunDay(now);
     final saved = await savedFuture;
     final gems = await gemsFuture;
+    final firstRun = await firstFuture;
     if (!mounted) return;
     final today = DateTime(now.year, now.month, now.day);
     setState(() {
       _today = today;
+      _firstRun = firstRun;
       _doneDays = saved.challengeDone;
       _streak = challengeStreakOf(saved.challengeDone, today);
       _weekCount = weekDays(
@@ -110,8 +117,15 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
     if (mounted) await _load();
   }
 
+  /// Coming back to the app (maybe after midnight): read the date again.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _in.dispose();
     _loop.dispose();
     super.dispose();
@@ -445,7 +459,11 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen>
     final done = _doneDays.contains(
       dayKey(DateTime(_today.year, _today.month, day)),
     );
-    final past = day < _today.day;
+    final cellDate = DateTime(_today.year, _today.month, day);
+    // a day before the first time the game was opened cannot be "missed"
+    final beforeStart =
+        _firstRun != null && (calendarDaysAfter(_firstRun, cellDate) ?? 0) < 0;
+    final past = day < _today.day && !beforeStart;
     Widget inner;
     if (done) {
       inner = Container(

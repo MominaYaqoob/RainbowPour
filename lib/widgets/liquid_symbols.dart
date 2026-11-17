@@ -44,13 +44,19 @@ abstract final class LiquidSymbols {
 
   /// Draws the symbol centred on [center], about [size] wide: white with a
   /// thin dark outline, so it reads on light and on dark liquid.
-  static void paint(Canvas canvas, int colorId, Offset center, double size) {
+  static void paint(
+    Canvas canvas,
+    int colorId,
+    Offset center,
+    double size, {
+    double outline = 0.13,
+  }) {
     final path = pathFor(colorId).transform(_matrix(center, size / 2));
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = math.max(0.5, size * 0.13)
+        ..strokeWidth = math.max(0.5, size * outline)
         ..strokeJoin = StrokeJoin.round
         ..color = Colors.black.withValues(alpha: 0.6),
     );
