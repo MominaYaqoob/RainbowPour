@@ -131,6 +131,50 @@ Level Failed popup; extra-bottle flow; "Undo N moves" hint; 3 free undos then a 
 5. Tell Claude: "Read `docs/UPDATE_PLAN_FIREBASE_ADS.md` first, then continue with Update 1, step 4B."
 6. The owner commits and pushes: check `git status`, `git add -A`, `git commit -m "..."`, `git push origin main`.
 
+## 11. Where every ad is placed and how test ads work (checked in the code, 2026-11-18)
+**Test ads today:** `lib/ads/ad_config.dart` has `useTestIds = true`, so EVERY build (debug AND release) uses Google sample IDs: App ID `ca-app-pub-3940256099942544~3347511713` (also in `AndroidManifest.xml`), banner `.../9214589741`, interstitial `.../1033173712`, rewarded `.../5224354917`, native `.../2247696110`. Test ads show a "Test Ad" label and pay nothing. Real IDs go in `AdConfig.real*` (all empty now); to switch set `useTestIds = false` and put the real App ID in the manifest in the same commit. There is NO App Open ad and NO Remove Ads in this game.
+
+| Ad | Where it shows (file) | Rule / how it works |
+|---|---|---|
+| **Banner** (320x50, `BannerAdSlot`) | Home screen (`lib/screens/home/home_screen.dart` line ~199) and Level map (`lib/screens/levels/level_map_screen.dart` line ~307) | Never on the game screen, splash, consent, onboarding or popups. Collapses if it fails. Widget code: `lib/ads/ad_widgets_io.dart` |
+| **Native** (`NativeAdCard`) | Bottom of the Daily Reward screen (`lib/screens/daily/daily_reward_screen.dart` line ~277) | Labelled "Ad", separated from the Claim button; nothing is shown if it fails to load |
+| **Interstitial** | After a win, when the player taps "Next level" (`lib/screens/game/game_screen.dart` lines ~378 and ~609, via `AdService.maybeShowInterstitial` and `onLevelCompleted`) | Rules in `lib/ads/interstitial_gate.dart`: never in levels 1-3 (`firstLevel = 4`), only after every 3rd completed level (`levelsPerAd = 3`), at least 90 s apart (`minGap`), not within 60 s of a rewarded ad (`afterRewardedGap`), never at launch, never in the daily challenge. Preloaded; shows only a ready ad |
+| **Rewarded** (+ placement names for Firebase) | Shop gems `shop_gems` (`shop_screen.dart` ~228, +10 gems, max 3/day); in a level: `gems_game`, `extra_undo` (+3 undos), `extra_bottle` (free bottle) (`game_screen.dart` ~660/682/803); win popup 2x gems `win_double` (`game_screen.dart` ~866); Daily Reward 2x `daily_double` (`daily_reward_screen.dart` ~119) | Always a button the player taps. `lib/ads/rewarded_flow.dart` grants the reward ONLY when Google's user-earned callback fires (closing early gives nothing). Preloaded in `AdService` (`_preloadRewarded`); if still loading, a tap waits 1 s then shows "Ad not ready" |
+
+**Order at startup:** consent screen / returning user -> `AdService.initialize()` (UMP form if required, then `MobileAds.initialize` only when `canRequestAds`) -> `adsReady` turns true -> banner/native widgets load, rewarded and interstitial preload -> `AnalyticsService.setConsent(true)` (Firebase + Crashlytics start). Web and non-Android skip all of it.
+
+**How to test with test ads (Update 1, safe):** `flutter run` (or a release APK) on a phone: banner on Home and Level map, native on Daily Reward, rewarded from Shop > Gems, win popup 2x, extra undo/bottle; interstitial: finish levels 4, 5, 6 (shows when you tap Next level after the 3rd, then not again for 90 s). The unit tests are `test/ads/` (`ad_config_test`, `ad_service_test`, `interstitial_gate_test`, `rewarded_flow_test`).
+
+**Real ads later:** same placements, only the IDs change. Update 2 adds mediation networks behind the same units (no change in where ads show).
+
+## 12. Timing of every ad, and how to add the App Open ad (design, NOT built yet)
+### 12.1 Timing summary (what exists in the code today)
+| Ad | Preload | Shows when | Limits |
+|---|---|---|---|
+| Banner / Native | loads when `adsReady` turns true and the screen is visible | while the player is on Home / Level map (banner) or Daily Reward (native) | none; collapses on failure |
+| Interstitial | preloaded after ads start and again after each show | only after a win, when the player taps "Next level" | level >= 4, every 3rd completed level, >= 90 s since the last interstitial, >= 60 s since the last rewarded, never at launch, never in the daily challenge |
+| Rewarded | preloaded after ads start and again after each show (`_preloadRewarded`) | only when the player taps a "Watch ad" button | a tap waits 1 s for a still-loading ad, then "Ad not ready"; gem ads max 3 per local day |
+| App Open | **not in this game yet** | see 12.2 | see 12.2 |
+Note: Google rewarded/interstitial ads expire about 1 hour after loading. Arrow Drift discards a rewarded ad older than 50 minutes before showing it (`_discardStaleRewarded`); check that Rainbow Pour does the same, or an old preloaded ad may fail to show.
+
+### 12.2 App Open ad: when to show (recommended rules, from Arrow Drift + `docs/RELEASE_AND_POLICY.md`)
+- Show ONLY when the player comes BACK to the app from the background, never on the first launch of a session and never during the very first session after install.
+- Minimum gap: **4 hours** since the last App Open ad (RELEASE_AND_POLICY says "only on return, >= 4 h"). Arrow Drift shows it on every resume; that earns more but irritates players, so Rainbow Pour should stay at 4 h.
+- NEVER: before the consent step is finished, while another fullscreen ad (interstitial/rewarded) is showing or was closed in the last ~4 s (that "resume" is our own ad closing and causes an App Open loop), inside a level or the daily challenge (the challenge clock must not run behind an ad), or on splash/consent/onboarding.
+- Preload: when the app goes to the background (`AppLifecycleState.paused`) and the player is not in a level; drop an ad older than 3 h 50 m; after a failed load wait 60 s before trying again.
+- If no ad is cached on return, just continue (no loading dialog; a spinner pop-up annoys players).
+### 12.3 App Open ad: how to add it (steps)
+1. AdMob (sir/dev): Apps > Rainbow Pour > Ad units > Add ad unit > **App open**; note the ID. (Test ID for development: `ca-app-pub-3940256099942544/9257395921`.)
+2. `lib/ads/ad_config.dart`: add `testAppOpenId` and `realAppOpenId` and an `appOpenId` getter with the same `resolve` rule (empty real ID must not fall back to a test ID).
+3. `lib/ads/ads_gateway.dart` and `mobile_ads_gateway.dart`: add `loadAppOpen(String adUnitId)` and `showLoadedAppOpen()` (use `AppOpenAd.load` / `show`, set `fullScreenContentCallback`, `onPaidEvent`), plus a stub in `mobile_ads_gateway_stub.dart` for web.
+4. `lib/ads/ad_service.dart`: add `_appOpenReady`, `_lastAppOpenShown`, a `WidgetsBindingObserver` for `paused` (preload) and `resumed` (show if the rules in 12.2 allow), and a flag `AdService.gameplayActive` that `game_screen.dart` sets (true while a level or the challenge is open).
+5. `game_screen.dart`: set `gameplayActive` in `initState`/`dispose` so the ad never shows mid-level.
+6. Ignore the resume that follows our own interstitial/rewarded for ~4 s.
+7. Tests: extend `test/ads/ad_service_test.dart` with a fake gateway (first launch never shows, 4 h gap, not while gameplay is active, not right after another ad, not before consent).
+8. Test on a phone with test IDs: open the app, press Home, wait, reopen (it should NOT show before 4 h; temporarily lower the gap in a debug build to check it), then confirm it never shows inside a level.
+9. Policy: App Open is full-screen: keep it away from launch; no new Data safety type (same Advertising ID data). Liftoff supports App Open in mediation (Unity and InMobi do not), so in Update 2 add the Liftoff App Open source to the new App Open unit.
+10. Where to schedule it: Update 1 only if sir wants it now; otherwise Update 2 together with Liftoff (fewer releases, one test round).
+
 ## 10. Quick order of work
 Update 1: Section 2 decisions, then 4A consoles, then 4B code (1 signing, 3 icon, 4 IDs, 5 ad_impression, 7 fonts, 8 permissions), then 4C release test on a phone, Internal testing, Production 20%, 4D checks.
 Update 2: Section 5, steps 1-7.
