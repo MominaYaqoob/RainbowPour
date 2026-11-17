@@ -1,3 +1,5 @@
+> **OUTDATED (kept for history).** This hand-over was written before tasks 1 to 14. The current, complete description of the project is `docs/PROJECT_GUIDE.md`. Read that first; use this file only for the owner's working style (section 5).
+
 # Rainbow Pour: Water Sort — hand-over notes
 
 Read this first when you continue in a new chat. It says what is built, what state the code is in, what is left, and how the owner likes to work.

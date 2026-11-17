@@ -12,6 +12,7 @@ import '../../core/haptics.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/info_dialog.dart';
 import '../../widgets/page_shell.dart';
+import 'qa_section.dart';
 import 'rate_us_dialog.dart';
 
 /// Settings. The four switches are saved; their effect comes with the game logic.
@@ -181,6 +182,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             ),
           ]),
+          // QA shortcuts: debug builds only (not compiled into release).
+          if (kDebugMode) ...[const SizedBox(height: 18), const QaSection()],
           const SizedBox(height: 22),
           Entrance(
             progress: _in,

@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import 'engine.dart';
 import 'models.dart';
 import 'solver.dart';
@@ -13,6 +15,15 @@ class HintAdvice {
   final int undoSteps;
 
   bool get isUndo => move == null;
+}
+
+/// What a hint search found: the advice, and the winning line it came from
+/// (null for "undo" advice or no advice). Sent back from the isolate.
+class HintSearch {
+  const HintSearch(this.advice, this.line);
+
+  final HintAdvice? advice;
+  final List<Move>? line;
 }
 
 /// Hints that always lead somewhere. Every move it returns is part of a line
@@ -56,21 +67,47 @@ class HintPlanner {
   /// first. Null only if the board is already won.
   HintAdvice? next(Board board, List<Move> history) {
     if (GameEngine.isWon(board)) return null;
-    final key = _key(board);
-
-    final known = _line[key] ?? _found[key];
+    final known = _line[_key(board)] ?? _found[_key(board)];
     if (known != null) return HintAdvice.move(known);
 
+    final result = _search(board, history);
+    final line = result.line;
+    if (line != null) _remember(board, line);
+    return result.advice;
+  }
+
+  /// Same answer as [next], but the heavy search (the solver and the beam
+  /// search can take about a second on a phone) runs on another isolate, so
+  /// the board never freezes. A board already on a known line answers at once.
+  /// Where isolates do not exist (web) it falls back to [next].
+  Future<HintAdvice?> nextAsync(Board board, List<Move> history) async {
+    if (GameEngine.isWon(board)) return null;
+    final known = _line[_key(board)] ?? _found[_key(board)];
+    if (known != null) return HintAdvice.move(known);
+
+    HintSearch result;
+    try {
+      result = await Isolate.run(() => _search(board, history));
+    } on UnsupportedError {
+      result = _search(board, history);
+    }
+    final line = result.line;
+    // keep what the isolate found, so the next hint on this line is instant
+    if (line != null) _remember(board, line);
+    return result.advice;
+  }
+
+  /// The searching part of [next]: the advice and, when a winning line was
+  /// found, the whole line (so the caller can remember it).
+  HintSearch _search(Board board, List<Move> history) {
     final solved = Solver.solve(board);
     if (solved != null && solved.isNotEmpty) {
-      _remember(board, solved);
-      return HintAdvice.move(solved.first);
+      return HintSearch(HintAdvice.move(solved.first), solved);
     }
 
     final beam = _beam(board);
     if (beam != null && beam.isNotEmpty) {
-      _remember(board, beam);
-      return HintAdvice.move(beam.first);
+      return HintSearch(HintAdvice.move(beam.first), beam);
     }
 
     // Walk back through the player's pours to a board on the level's line.
@@ -82,9 +119,11 @@ class HintPlanner {
       } on ArgumentError {
         break;
       }
-      if (_line.containsKey(_key(back))) return HintAdvice.undo(steps);
+      if (_line.containsKey(_key(back))) {
+        return HintSearch(HintAdvice.undo(steps), null);
+      }
     }
-    return null;
+    return const HintSearch(null, null);
   }
 
   void _remember(Board board, List<Move> line) {

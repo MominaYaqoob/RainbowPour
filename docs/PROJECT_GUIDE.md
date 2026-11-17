@@ -25,7 +25,7 @@ Last updated: 2026-11-17. Code state: all work through Task 11 is committed (`86
 | Level map with real progress/stars, Profile/Stats with real counters | Done |
 | Daily Reward (7-day streak) and Daily Challenge (timer, weekly bonus) with clock protection | Done |
 | AdMob: consent (UMP), rewarded, banner, native, interstitial (test ad ids) | Done, needs real ids |
-| Audio (sound + music) | Code done, **audio files are silent placeholders** |
+| Audio (sound + music) | Done: 7 generated sounds (not silent); the owner may replace them with professional ones |
 | Colorblind mode (20 symbols) | Done |
 | Firebase Analytics + Crashlytics (consent-gated) | Done, needs on-device verification |
 | In-app review, Privacy/Terms links, Rate dialog | Done (the two policy URLs are empty until the owner supplies them) |
@@ -305,7 +305,7 @@ Adding an event: add a typed method to `AnalyticsService` (name <= 40 chars, let
 ## 12. Audio, haptics, colorblind mode
 
 - **Audio** (`core/audio_service.dart`, package `audioplayers`): `Sfx` = tap, select, pour, bottleFull, win, fail; plus a looping music track. Switches Sound and Music (Settings) apply instantly. Music starts when Home first shows, pauses when the app goes to the background, resumes on return. A small pool of 4 low-latency players lets effects overlap; audio focus is "mix with others". Nothing plays until `AudioService.load()` has run, and no player error escapes. Hooks: every `WaterButton` press (tap), bottle select, pour start, bottle complete, win, stuck/time up (fail).
-- **The 7 files in `assets/audio/` are valid but silent placeholders** (generated). Replace them with real sounds keeping the names and `.wav` extension (or change `AudioAssets`). Advice: sound effects under about 100 KB, music under about 1 MB. See `assets/audio/README.md`.
+- **The 7 files in `assets/audio/` are real generated sounds (since 2026-11-18)**, synthesised by `tools/make_sounds.dart` (sine/triangle waves and noise, no samples): tap pop, select blips, water pour with bubbles (1.5 s), 4-note bottle-full ding, win fanfare, fail notes, and a 16 s calm pad + arpeggio music loop (seamless). Tune them by editing the script and running `dart run tools/make_sounds.dart assets/audio`, or replace a file with a professional one keeping the name and `.wav`. `test/core/audio_assets_test.dart` checks every file is a valid WAV, not silent, no clipping, under 100 KB (music under 1 MB), and that the music loop has no click at the seam. See `assets/audio/README.md`.
 - **Haptics** (`core/haptics.dart`): selection click, light/medium/heavy impacts at the same places, following the Vibration switch.
 - **Colorblind mode** (`widgets/liquid_symbols.dart`, `widgets/cone_bottle.dart`, `core/colorblind.dart`): when on, a white symbol with a dark outline is drawn on every liquid layer; one distinct silhouette per colour id (heart, triangle, star, disc, drop, square, diamond, plus, ring, cross, hexagon, stripes, moon, bolt, pentagon, wave, arrow, flower, dots, hourglass). Close colours get very different shapes. Symbols are skipped when they would be under about 5.5 px. The bottle that is tilted for a pour draws no symbols while it moves. With the mode off the bottle renders pixel-identically to before (tested). Palette distances (CIE76) are all above 12; the closest pair is cyan/sky at about 19.
 
@@ -382,7 +382,7 @@ Confirmed by code review and tests; items marked (browser) come from the browser
 5. **Privacy policy and Play Data safety** must now include Firebase Analytics/Crashlytics (device ids, app interactions, crash logs). The Privacy/Terms links in Consent and Settings now open `AppLinks.privacyPolicyUrl` and `AppLinks.termsUrl` in `lib/core/app_links.dart`, which are EMPTY until the owner gives the real URLs (until then the app says "This page is coming soon").
 6. **Merged manifest permissions** exceed the documented three (section 14); review the release manifest.
 7. ~~No in-app review~~ **Done (Task 12).** The in-app review is requested after a win of level 5 or later, at most once per 30 days (`reviewAskedDay` in the save), never in the challenge, never right after an interstitial, never when the clock looks wrong. The Settings Rate dialog sends 4 to 5 stars to the review sheet (or the store page) and 1 to 3 stars only get a thank-you. The review sheet itself only appears for apps installed from Google Play, so it cannot be fully tested locally.
-8. **Audio files are silent placeholders.**
+8. ~~Audio files are silent placeholders~~ **Done 2026-11-18** (generated sounds, see section 12; professional sounds are still welcome).
 
 ### Logic and economy risks
 9. ~~Gem farming by replaying levels~~ **Fixed 2026-11-17.** Only the FIRST win of a level pays gems (`Rewards.winGems(stars:, firstClear:)`; the first-win check is "the level has no entry in `SaveData.stars` yet"). A replay pays nothing, the popup says "Gems are paid on the first win only" and does not offer the 2x ad. Stars and progress still update on a replay.
@@ -441,12 +441,13 @@ Release web build opened at 360x740 and clicked through on 2026-11-17 (save pre-
 | File | Status |
 |---|---|
 | `PROJECT_GUIDE.md` | **This file. Current.** |
-| `HANDOFF.md` | Older hand-over notes; partly outdated (it predates tasks 1-11). Prefer this guide. |
-| `TODO.md` | The 15-task plan; tasks 1-11 and Firebase are done, 12-15 open (the checkboxes were not ticked). |
-| `RELEASE_AND_POLICY.md` | Current policy and release checklist (kept up to date with ads/Firebase). |
+| `HANDOFF.md` | Old hand-over notes (marked OUTDATED at the top); only the owner's working style (section 5) is still useful. |
+| `TODO.md` | The task plan: tasks 1 to 12 done, 13 and 14 in progress, 15 (release) open, plus the extra audit tasks A to D. |
+| `RELEASE_AND_POLICY.md` | Current policy and release checklist (kept up to date with ads and Firebase). |
 | `PRIVACY_POLICY_DRAFT.md` | Needs a Firebase update before publishing. |
-| `CURSOR_TASK_01_LEVEL_MAP.md` | Prompt for an old task; historical. |
-| `BACKEND_THEORY.md`, `CURSOR_PROMPTS.md`, `CURSOR_MASTER_PROMPT.md`, `PLAN.md`, `UI_DONE_NOTES.md`, `design_preview.html` | **Obsolete** planning docs (they mention 500 levels, 12 colours, a spin wheel, etc.). Keep only for history or delete in Task 14. |
+| `UPDATE_PLAN_FIREBASE_ADS.md` | Plan for update 1 (Firebase and AdMob test ads, release preparation) and update 2 (mediation and real ads). |
+| `PLAN.md`, `UI_DONE_NOTES.md`, `design_preview.html` | Old screen design notes, kept for history (they mention a spin wheel and 12 colours). |
+| (deleted 2026-11-18) | `BACKEND_THEORY.md`, `CURSOR_PROMPTS.md`, `CURSOR_MASTER_PROMPT.md`, `CURSOR_TASK_01_LEVEL_MAP.md`: obsolete planning prompts. They are still in git history.
 
 ---
 
@@ -487,3 +488,28 @@ Release web build opened at 360x740 and clicked through on 2026-11-17 (save pre-
 | Go live with ads | real ids in `ad_config.dart`, `useTestIds = false`, manifest app id | test on a phone |
 | Add a bottle shape / background | `bottle_shape.dart` / `background_theme.dart` + shop entry + price | update section 8 |
 | Replace sounds | files in `assets/audio/` with the same names | listen on a phone |
+
+---
+
+## 23. Phone test findings (real device, 2026-11-17 and 18)
+
+Device used: vivo V2043 (Android 11, 3.9 GB RAM, about 50 MB free: a worst-case low-RAM phone). Tested by installing builds with `adb install -r` and driving the screen with `adb shell input tap` plus `adb exec-out screencap`.
+
+- **Release build crashed on launch** (R8 removed the WorkManager Room constructor). Fixed with `android/app/proguard-rules.pro`; verified: the release build now opens straight to Home. Release APK about 54.6 MB (debug about 187 MB).
+- **Home did not refresh after the game** (the Play button pushed the game without reloading), so it still showed the old level and gems. Fixed: `HomeScreen` reloads when the game pops (`.then((_) => _load())`).
+- **Verified on the phone:** first launch flow, banner (a Test Ad shows at the bottom of Home), save and resume of an unfinished board, Back button opens the pause menu, "Undo N moves" hint, "Need more undos" popup, first win of a level pays +20 gems, levels 2 to 6 completed by hand, colorblind symbols readable on the real screen, interstitial video ad appeared after level 4, no crash or ANR in the release build.
+- **Debug build ANR:** a rewarded test ad froze and Android killed the app (AdActivity "Input dispatching timed out"). Debug builds are far slower; the game keeps animating behind the ad. Re-check the rewarded ad on the release build; if it still stutters, pause the tickers while an ad is showing.
+- **Automation tip for testers:** the generator gives the solution of any level: `LevelGenerator.forLevel(n).solution` (list of `from>to` bottle indexes, bottles numbered left to right, top row first). With `adb shell input tap` on the bottle centres you can play a level without hints. Do not tap while someone is playing on the same phone.
+
+### 23b. OPEN PROBLEM: no sound in release builds (status 2026-11-18)
+
+- **Symptom:** on a real phone (vivo V2043, Android 11) the RELEASE build plays no sound and no music (effects, music and the Settings "pop" are all silent). Debug builds do create audio tracks.
+- **What is known:**
+  - The 7 files in `assets/audio/` are real sounds and are inside the release APK (`assets/flutter_assets/assets/audio/*.wav`).
+  - Before `android/app/proguard-rules.pro` got the `-keep class xyz.luan.audioplayers.** { *; }` rules the app created NO audio players at all in release. After the rules, `dumpsys audio` shows a MediaPlayer (music) and a SoundPool (effects) for the app, but both stay `idle` forever, so nothing starts.
+  - The Settings Sound/Music switches are correct (`test/screens/settings_audio_switches_test.dart`: each switch flips once, saves, and tells `AudioService`).
+  - This phone also routes audio to "headphone" with the speaker media volume at 0; check that other apps (YouTube) are audible before blaming the game.
+  - On this phone the app's `debugPrint` output does not show in `adb logcat` for non-debuggable apps (vendor log filter), so the `Audio:` / `Audio error:` lines added to `lib/core/audio_service.dart` are invisible in a normal release build.
+- **Best next step:** temporarily set `isDebuggable = true` in the `release` block of `android/app/build.gradle.kts` (R8 stays on), build `flutter build apk --release`, install, open the game, and read `adb logcat` for the `Audio:` lines (they print the flags and every decision). **Remove `isDebuggable` again before sending the APK to anyone.**
+- **Main suspects:** (1) `audioplayers` copies an asset to a temp file through `path_provider` before playing, and a failure there (R8 or a missing keep rule) would leave the players idle with the error hidden; try keeping `io.flutter.plugins.pathprovider.**` too. (2) `AudioContextConfig(focus: mixWithOthers)` in `_PluginPlayer._setContext`. (3) A wrong lifecycle state (`_inBackground`) blocking the music: the `music sync:` log line shows it.
+- Until this is fixed the game is silent in release builds. Everything else was verified in a release build on the phone.

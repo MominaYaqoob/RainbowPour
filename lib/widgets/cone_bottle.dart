@@ -125,7 +125,7 @@ class _ConeBottlePainter extends CustomPainter {
   /// Colorblind mode: the symbol of [colorId] centred in the liquid band
   /// from [top] to [bottom] (bottle units). Skipped while the band is less
   /// than 60% of a layer, or when it would be under about 5.5 px on screen.
-  /// A bottle that is tilted for a pour draws no symbols while it moves.
+  ///
   void _symbol(
     Canvas canvas,
     Size size,
@@ -142,6 +142,36 @@ class _ConeBottlePainter extends CustomPainter {
       colorId,
       Offset(18, (top + bottom) / 2),
       symbolSize,
+    );
+  }
+
+  /// Colorblind symbol for a layer of a TILTED bottle (while it is poured).
+  /// The layer is the band between its surface [top] and the surface below it
+  /// [bottom] (the floor of the bottle for the lowest layer), in the level
+  /// frame. The symbol stays upright, in the middle of the liquid there. Same
+  /// skip rules as [_symbol], plus: skipped when the liquid is narrower than
+  /// the symbol at that height.
+  void _tiltedSymbol(
+    Canvas canvas,
+    Size size,
+    int colorId,
+    double top,
+    double bottom,
+    List<Offset> rot,
+  ) {
+    if (bottom - top < lh * 0.6) return;
+    final small = size.width < 34;
+    final symbolSize = lh * (small ? 0.6 : 0.7);
+    if (symbolSize * size.width / 36 < 5.5) return;
+    final mid = (top + bottom) / 2;
+    final (x0, x1) = _chord(rot, mid);
+    if (!(x1 > x0) || x1 - x0 < symbolSize * 1.15) return;
+    LiquidSymbols.paint(
+      canvas,
+      colorId,
+      Offset((x0 + x1) / 2, mid),
+      symbolSize,
+      outline: small ? 0.1 : 0.13,
     );
   }
 
@@ -179,7 +209,7 @@ class _ConeBottlePainter extends CustomPainter {
     _rotateAbout(canvas, -tilt);
     const wide = 120.0;
     if (tilt.abs() >= 1e-4) {
-      _paintTilted(canvas);
+      _paintTilted(canvas, size);
     } else {
       double top = 110;
       for (var i = 0; i < layers.length; i++) {
@@ -403,7 +433,7 @@ class _ConeBottlePainter extends CustomPainter {
     return (minX, maxX);
   }
 
-  void _paintTilted(Canvas canvas) {
+  void _paintTilted(Canvas canvas, Size size) {
     const wide = 120.0;
     final outline = _outlineOf(shape);
     // bottle outline in the level frame
@@ -416,6 +446,11 @@ class _ConeBottlePainter extends CustomPainter {
           _pivot.dy + (o.dx - _pivot.dx) * s + (o.dy - _pivot.dy) * c,
         ),
     ];
+    // the lowest point of the bottle: the floor of the bottom layer
+    var lowest = 0.0;
+    for (final o in rot) {
+      lowest = math.max(lowest, o.dy);
+    }
     // cumulative volume up to the top of each layer, measured upright
     final cum = <double>[];
     var prev = 0.0;
@@ -441,6 +476,9 @@ class _ConeBottlePainter extends CustomPainter {
           Rect.fromLTWH(-wide, level - 0.5, 36 + 2 * wide, 1),
           Paint()..color = Colors.white.withValues(alpha: 0.3),
         );
+      }
+      if (symbols) {
+        _tiltedSymbol(canvas, size, layers[i], level, below ?? lowest, rot);
       }
       below = level;
       topLevel = level;

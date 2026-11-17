@@ -68,4 +68,81 @@ void main() {
       }
     }
   });
+
+  group('nextAsync (the isolate version)', () {
+    /// A board a few random pours away from the level's own line, with the
+    /// player's history.
+    ({Board board, List<Move> history}) wander(int level, int pours) {
+      final generated = LevelGenerator.forLevel(level);
+      var board = generated.board;
+      final history = <Move>[];
+      final rng = Random(level * 31 + pours);
+      for (var i = 0; i < pours && !GameEngine.isWon(board); i++) {
+        final moves = GameEngine.usefulMoves(board);
+        if (moves.isEmpty) break;
+        final move = moves[rng.nextInt(moves.length)];
+        board = GameEngine.pour(board, move.from, move.to)!.board;
+        history.add(move);
+      }
+      return (board: board, history: history);
+    }
+
+    test('gives the same advice as the synchronous version', () async {
+      var undoCases = 0;
+      for (final level in [2, 5, 9, 15, 30, 60, 100, 109, 150, 250]) {
+        for (final pours in [0, 2, 5]) {
+          final generated = LevelGenerator.forLevel(level);
+          final a = HintPlanner(generated.board, generated.solution);
+          final b = HintPlanner(generated.board, generated.solution);
+          final w = wander(level, pours);
+          final sync = a.next(w.board, w.history);
+          final async = await b.nextAsync(w.board, w.history);
+          expect(async?.isUndo, sync?.isUndo, reason: 'level $level/$pours');
+          expect(async?.move, sync?.move, reason: 'level $level/$pours');
+          expect(
+            async?.undoSteps,
+            sync?.undoSteps,
+            reason: 'level $level/$pours',
+          );
+          if (sync != null && sync.isUndo) undoCases++;
+        }
+      }
+      // ignore: avoid_print
+      print('nextAsync compared 30 boards, undo advice in $undoCases');
+    });
+
+    test('a won board has no advice', () async {
+      final generated = LevelGenerator.forLevel(2);
+      final planner = HintPlanner(generated.board, generated.solution);
+      var board = generated.board;
+      for (final move in generated.solution) {
+        board = GameEngine.pour(board, move.from, move.to)!.board;
+      }
+      expect(GameEngine.isWon(board), isTrue);
+      expect(await planner.nextAsync(board, const []), isNull);
+    });
+
+    test('what the isolate found is remembered for the next hint', () async {
+      final generated = LevelGenerator.forLevel(150);
+      final planner = HintPlanner(generated.board, generated.solution);
+      final w = wander(150, 4);
+      final first = await planner.nextAsync(w.board, w.history);
+      final second = planner.next(w.board, w.history);
+      expect(second?.move, first?.move);
+      expect(second?.isUndo, first?.isUndo);
+    });
+
+    test(
+      'a hint search returns well inside a second on this machine',
+      () async {
+        final generated = LevelGenerator.forLevel(250);
+        final planner = HintPlanner(generated.board, generated.solution);
+        final w = wander(250, 6);
+        final watch = Stopwatch()..start();
+        await planner.nextAsync(w.board, w.history);
+        watch.stop();
+        expect(watch.elapsedMilliseconds, lessThan(3000));
+      },
+    );
+  });
 }

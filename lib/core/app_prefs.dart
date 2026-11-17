@@ -5,6 +5,8 @@ import 'daily_challenge.dart' as challenge;
 import 'daily_reward.dart' as reward;
 import 'save_data.dart';
 
+part 'app_prefs_qa.dart';
+
 /// Local storage for the player's progress and settings.
 ///
 /// Everything lives in one [SaveData] document stored as JSON under

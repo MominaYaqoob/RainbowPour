@@ -128,6 +128,9 @@ class _GameScreenState extends State<GameScreen>
   ExtraBottle _extra = ExtraBottle();
   bool _rewarded = false;
 
+  /// A hint is being searched on another isolate (ignore a second tap).
+  bool _hintBusy = false;
+
   /// The level or challenge reached a result (win, time up), so leaving the
   /// screen is not a "quit" for analytics.
   bool _runEnded = false;
@@ -693,11 +696,21 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Future<void> _hint() async {
-    if (_busy || _tutorialMoves != null) return;
+    if (_busy || _hintBusy || _tutorialMoves != null) return;
     final play = _play;
     if (play == null || play.isWon) return;
     Haptics.tap();
-    final advice = _planner?.next(play.board, play.history);
+    // The search runs on another isolate (it can take about a second on a
+    // phone), so the board keeps animating. An answer for a board that has
+    // changed meanwhile (a move, undo, restart, next level) is dropped.
+    _hintBusy = true;
+    final HintAdvice? advice;
+    try {
+      advice = await _planner?.nextAsync(play.board, play.history);
+    } finally {
+      _hintBusy = false;
+    }
+    if (!mounted || !identical(_play, play)) return;
     final move = advice?.move;
     if (move == null) {
       // no gems are taken when the hint is "undo"

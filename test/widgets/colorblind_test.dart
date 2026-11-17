@@ -213,4 +213,60 @@ void main() {
     );
     expect(three, isNot(on));
   });
+
+  testWidgets('a tilted (pouring) bottle also shows its symbols', (
+    tester,
+  ) async {
+    final key = GlobalKey();
+    const layers = [2, 7, 11];
+    for (final tilt in [0.3, 0.6, 0.9]) {
+      final fraction = ConeBottle.topLayerFractionForTilt(tilt, layers.length);
+      final off = await render(
+        tester,
+        key: key,
+        bottle: ConeBottle(
+          layers: layers,
+          width: 56,
+          tilt: tilt,
+          topLayerFraction: fraction,
+          symbols: false,
+        ),
+      );
+      final on = await render(
+        tester,
+        key: key,
+        bottle: ConeBottle(
+          layers: layers,
+          width: 56,
+          tilt: tilt,
+          topLayerFraction: fraction,
+          symbols: true,
+        ),
+      );
+      expect(on, isNot(off), reason: 'no symbols drawn at tilt $tilt');
+    }
+  });
+
+  testWidgets('tilted with the mode off is the same as before (no symbols)', (
+    tester,
+  ) async {
+    final key = GlobalKey();
+    const layers = [3, 9, 14];
+    final explicitOff = await render(
+      tester,
+      key: key,
+      bottle: const ConeBottle(
+        layers: layers,
+        width: 56,
+        tilt: 0.9,
+        symbols: false,
+      ),
+    );
+    final followsSwitch = await render(
+      tester,
+      key: key,
+      bottle: const ConeBottle(layers: layers, width: 56, tilt: 0.9),
+    );
+    expect(followsSwitch, explicitOff);
+  });
 }

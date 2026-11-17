@@ -151,9 +151,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     label: 'Play',
                     icon: Icons.play_arrow_rounded,
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).push(fadeRoute(const GameScreen(), zoom: true)),
+                    // Come back to a fresh Home: the level and the gems may
+                    // have changed while playing.
+                    onPressed: () => Navigator.of(context)
+                        .push(fadeRoute(const GameScreen(), zoom: true))
+                        .then((_) => _load()),
                   ),
                 ),
                 const SizedBox(height: 16),

@@ -18,7 +18,7 @@ Status as of 2026-11-17: tasks 1-11 are done and committed (86437b8); Firebase A
 - [ ] **14. Cleanup and docs** — (Settings demo section already removed) remove debug logs, update outdated docs, refresh `HANDOFF.md`.
 - [ ] **15. Release** — keystore + `key.properties` (not committed), version, `flutter build appbundle --release`, universal APK, Play Console listing/Data safety/content rating/ads declaration.
 
-**Only the owner can supply:** real AdMob IDs, Privacy Policy and Terms URLs, audio files, Play Console account.
+**Only the owner can supply:** real AdMob IDs, Privacy Policy and Terms URLs, (optional) professional audio files, Play Console account.
 
 **Later, optional:** difficulty plateau after level 100 (more scramble, honest `par`).
 

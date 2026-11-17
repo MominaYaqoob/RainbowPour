@@ -53,3 +53,6 @@ app.*.map.json
 android/key.properties
 android/app/google-services.json
 *.env
+
+# Kotlin Gradle plugin cache
+android/.kotlin/

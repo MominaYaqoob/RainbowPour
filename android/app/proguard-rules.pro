@@ -12,3 +12,9 @@
 -keep class androidx.work.impl.WorkDatabase_Impl {
     <init>();
 }
+
+# audioplayers (sound effects and music). R8 full mode can rename or strip the
+# plugin's enums and player classes, which are looked up by name from Dart; the
+# game then plays no sound at all in release builds (it worked in debug).
+-keep class xyz.luan.audioplayers.** { *; }
+-keepclassmembers enum xyz.luan.audioplayers.** { *; }

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app_prefs.dart';
@@ -80,6 +79,7 @@ class AudioService with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
     }
     _loaded = true;
+    _log('load: sound=$_sound music=$_music');
     _syncMusic();
   }
 
@@ -94,6 +94,7 @@ class AudioService with WidgetsBindingObserver {
 
   /// Plays one effect. Fire and forget; silent when Sound is off.
   void play(Sfx sfx) {
+    _log('sfx $sfx: loaded=$_loaded sound=$_sound');
     if (!_loaded || !_sound) return;
     _guard(() => _player.playSfx(AudioAssets.of(sfx)));
   }
@@ -121,6 +122,10 @@ class AudioService with WidgetsBindingObserver {
   void _syncMusic() {
     if (!_loaded) return;
     final shouldPlay = _musicWanted && _music && !_inBackground;
+    _log(
+      'music sync: wanted=$_musicWanted on=$_music '
+      'background=$_inBackground playing=$_musicPlaying',
+    );
     if (shouldPlay) {
       if (!_musicPlaying) {
         _musicPlaying = true;
@@ -146,10 +151,22 @@ class AudioService with WidgetsBindingObserver {
     }
   }
 
+  int _logged = 0;
+
+  /// A few lines about what the service decides, also in release builds, so
+  /// "no sound on the phone" can be diagnosed from the log. Capped.
+  void _log(String message) {
+    if (_logged >= 40) return;
+    _logged++;
+    debugPrint('Audio: $message');
+  }
+
   void _guard(Future<void> Function() job) {
     unawaited(
       Future<void>.sync(job).catchError((Object error) {
-        if (kDebugMode) debugPrint('Audio: $error');
+        // Always logged (also in release): a silent failure here once meant
+        // "no sound at all" on phones and was impossible to see.
+        debugPrint('Audio error: $error');
       }),
     );
   }
