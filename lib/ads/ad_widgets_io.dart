@@ -4,6 +4,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_config.dart';
 import 'ad_service.dart';
+import 'paid_event.dart';
 
 /// An adaptive banner. It asks for an ad only when ads are allowed, takes no
 /// space until then, keeps its height while the ad loads, and collapses if
@@ -41,11 +42,22 @@ class _BannerAdSlotState extends State<BannerAdSlot> {
     // Standard 320x50 banner: a fixed, small height keeps Home and the level
     // map layouts stable (the adaptive sizes are taller).
     const size = AdSize.banner;
+    final String unit;
+    try {
+      unit = AdConfig.bannerId;
+    } catch (error) {
+      // A missing real id must never crash the screen: no banner instead.
+      _failed = true;
+      _starting = false;
+      if (kDebugMode) debugPrint('Banner: $error');
+      return;
+    }
     final ad = BannerAd(
-      adUnitId: AdConfig.bannerId,
+      adUnitId: unit,
       size: size,
       request: const AdRequest(),
       listener: BannerAdListener(
+        onPaidEvent: paidEventLogger(format: 'banner', unit: unit),
         onAdLoaded: (_) {
           if (mounted) setState(() => _loaded = true);
         },
@@ -113,8 +125,16 @@ class _NativeAdCardState extends State<NativeAdCard> {
 
   void _maybeLoad() {
     if (_ad != null || !AdService.instance.adsReady.value) return;
+    final String unit;
+    try {
+      unit = AdConfig.nativeId;
+    } catch (error) {
+      _ad = null;
+      if (kDebugMode) debugPrint('Native: $error');
+      return;
+    }
     final ad = NativeAd(
-      adUnitId: AdConfig.nativeId,
+      adUnitId: unit,
       request: const AdRequest(),
       nativeTemplateStyle: NativeTemplateStyle(
         templateType: TemplateType.small,
@@ -139,6 +159,7 @@ class _NativeAdCardState extends State<NativeAdCard> {
         ),
       ),
       listener: NativeAdListener(
+        onPaidEvent: paidEventLogger(format: 'native', unit: unit),
         onAdLoaded: (_) {
           if (mounted) setState(() => _loaded = true);
         },

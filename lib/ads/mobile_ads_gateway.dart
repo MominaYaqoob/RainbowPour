@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ads_gateway.dart';
+import 'paid_event.dart';
 
 /// Android (and other IO) builds. Web uses [mobile_ads_gateway_stub.dart].
 AdsGateway createMobileAdsGateway() => PluginAdsGateway();
@@ -129,6 +130,7 @@ class PluginAdsGateway implements AdsGateway {
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           _rewarded?.dispose();
+          ad.onPaidEvent = paidEventLogger(format: 'rewarded', unit: adUnitId);
           _rewarded = ad;
           if (!done.isCompleted) done.complete();
         },
@@ -189,6 +191,10 @@ class PluginAdsGateway implements AdsGateway {
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           _interstitial?.dispose();
+          ad.onPaidEvent = paidEventLogger(
+            format: 'interstitial',
+            unit: adUnitId,
+          );
           _interstitial = ad;
           if (!done.isCompleted) done.complete();
         },

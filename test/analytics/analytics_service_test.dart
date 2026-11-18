@@ -45,6 +45,29 @@ Future<AnalyticsService> started(
 }
 
 void main() {
+  test(
+    'ad_impression carries value in currency units and the ad format',
+    () async {
+      final fake = FakeBackend();
+      final service = await started(fake);
+      service.adImpression(
+        format: 'rewarded',
+        unit: 'ca-app-pub-x/1',
+        valueMicros: 2500000,
+        currency: 'USD',
+      );
+      await settle();
+      expect(fake.events.single.$1, 'ad_impression');
+      expect(fake.events.single.$2, {
+        'value': 2.5,
+        'currency': 'USD',
+        'ad_format': 'rewarded',
+        'ad_unit_name': 'ca-app-pub-x/1',
+        'ad_platform': 'AdMob',
+      });
+    },
+  );
+
   test('nothing is sent before init or before consent', () async {
     final fake = FakeBackend();
     final service = AnalyticsService(backend: fake, supported: true);

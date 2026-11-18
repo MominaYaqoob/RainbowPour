@@ -43,6 +43,38 @@ void main() {
     expect(fake.forms, 0);
   });
 
+  test(
+    'a rewarded ad older than 50 minutes is reloaded before showing',
+    () async {
+      final fake = _FakeGateway()..allowed = true;
+      var clock = DateTime(2026, 1, 1, 9);
+      final ads = AdService(
+        gateway: fake,
+        supported: true,
+        now: () => clock,
+        readyWait: const Duration(milliseconds: 40),
+      );
+      await ads.initialize();
+      await Future<void>.delayed(Duration.zero);
+      expect(fake.rewardedLoads, 1);
+
+      // fresh ad: shown without a new load
+      clock = clock.add(const Duration(minutes: 49));
+      await ads.showRewarded();
+      expect(fake.rewardedShows, 1);
+      await Future<void>.delayed(Duration.zero);
+      expect(fake.rewardedLoads, 2);
+
+      // that preloaded ad goes stale
+      clock = clock.add(const Duration(minutes: 51));
+      await ads.showRewarded();
+      // one fresh load replaced the stale ad and was shown, then the next
+      // one was preloaded
+      expect(fake.rewardedShows, 2);
+      expect(fake.rewardedLoads, 4, reason: 'stale ad replaced');
+    },
+  );
+
   test('web and non-Android do nothing', () async {
     final fake = _FakeGateway()..allowed = true;
     final ads = AdService(gateway: fake, supported: false);
@@ -67,6 +99,8 @@ class _FakeGateway implements AdsGateway {
   int configs = 0;
   int sdkInits = 0;
   int privacyShows = 0;
+  int rewardedLoads = 0;
+  int rewardedShows = 0;
 
   Completer<void>? _paused;
 
@@ -113,10 +147,15 @@ class _FakeGateway implements AdsGateway {
   }
 
   @override
-  Future<void> loadRewarded(String adUnitId) async {}
+  Future<void> loadRewarded(String adUnitId) async {
+    rewardedLoads++;
+  }
 
   @override
-  Future<bool> showLoadedRewarded() async => false;
+  Future<bool> showLoadedRewarded() async {
+    rewardedShows++;
+    return false;
+  }
 
   @override
   Future<void> loadInterstitial(String adUnitId) async {}

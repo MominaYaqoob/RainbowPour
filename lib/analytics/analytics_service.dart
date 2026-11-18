@@ -152,6 +152,21 @@ class AnalyticsService {
   void rewardedAd(String placement, String result) =>
       log('ad_rewarded', {'placement': placement, 'result': result});
 
+  /// Ad revenue for one shown ad (AdMob's paid event). [valueMicros] is
+  /// millionths of [currency]. Firebase uses the name `ad_impression` for ROAS.
+  void adImpression({
+    required String format,
+    required String unit,
+    required double valueMicros,
+    required String currency,
+  }) => log('ad_impression', {
+    'value': valueMicros / 1000000,
+    'currency': currency,
+    'ad_format': format,
+    'ad_unit_name': unit,
+    'ad_platform': 'AdMob',
+  });
+
   void interstitialShown(int level) => log('ad_interstitial', {'level': level});
 
   void dailyRewardClaim(int gems) => log('daily_reward_claim', {'gems': gems});

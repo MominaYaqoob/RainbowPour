@@ -92,6 +92,33 @@ void main() {
     expect(fake.shows, 1);
   });
 
+  test(
+    'an interstitial older than 50 minutes is reloaded, not shown',
+    () async {
+      final fake = _InterstitialGateway();
+      var clock = DateTime(2026, 1, 1, 12);
+      final ads = AdService(
+        gateway: fake,
+        supported: true,
+        now: () => clock,
+        gate: InterstitialGate(clock: () => const Duration(hours: 5)),
+      );
+      await ads.initialize();
+      await Future<void>.delayed(Duration.zero);
+      expect(fake.loads, 1);
+      for (var i = 0; i < 3; i++) {
+        ads.onLevelCompleted();
+      }
+      clock = clock.add(const Duration(minutes: 51));
+      expect(await ads.maybeShowInterstitial(level: 6), isFalse);
+      expect(fake.shows, 0, reason: 'stale ad must not be shown');
+      await Future<void>.delayed(Duration.zero);
+      expect(fake.loads, 2, reason: 'a fresh one is requested');
+      expect(await ads.maybeShowInterstitial(level: 6), isTrue);
+      expect(fake.shows, 1);
+    },
+  );
+
   test('a failed show never throws and never delays', () async {
     final fake = _InterstitialGateway()..failShow = true;
     final ads = AdService(

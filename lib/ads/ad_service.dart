@@ -21,7 +21,9 @@ class AdService {
     bool? supported,
     Duration? readyWait,
     InterstitialGate? gate,
-  }) : _injected = gateway,
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now,
+       _injected = gateway,
        _supported = supported ?? _androidOnly,
        _readyWait = readyWait ?? rewardedReadyWait,
        gate = gate ?? InterstitialGate();
@@ -33,6 +35,17 @@ class AdService {
 
   /// How long a tap waits for a rewarded ad that is still loading.
   static const rewardedReadyWait = Duration(seconds: 1);
+
+  /// Google drops a loaded full-screen ad after about an hour. An ad older
+  /// than this is thrown away and loaded again instead of failing to show.
+  static const maxAdAge = Duration(minutes: 50);
+
+  final DateTime Function() _now;
+  DateTime? _rewardedLoadedAt;
+  DateTime? _interstitialLoadedAt;
+
+  bool _stale(DateTime? loadedAt) =>
+      loadedAt != null && _now().difference(loadedAt) > maxAdAge;
 
   static bool get _androidOnly =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -110,6 +123,7 @@ class AdService {
     if (!_supported || !_canRequestAds || _showingRewarded) {
       return RewardedResult.notReady;
     }
+    if (_rewardedReady && _stale(_rewardedLoadedAt)) _rewardedReady = false;
     if (!_rewardedReady) {
       _preloadRewarded();
       final pending = _loading;
@@ -151,7 +165,10 @@ class AdService {
   Future<void> _loadRewarded() async {
     try {
       await _gateway.loadRewarded(AdConfig.rewardedId);
-      if (!_showingRewarded) _rewardedReady = true;
+      if (!_showingRewarded) {
+        _rewardedReady = true;
+        _rewardedLoadedAt = _now();
+      }
     } catch (error, stack) {
       _rewardedReady = false;
       _log(error, stack);
@@ -168,6 +185,9 @@ class AdService {
   Future<bool> maybeShowInterstitial({required int level}) async {
     if (!_supported || !_canRequestAds || _showingInterstitial) return false;
     if (_showingRewarded || !gate.shouldShow(level: level)) return false;
+    if (_interstitialReady && _stale(_interstitialLoadedAt)) {
+      _interstitialReady = false;
+    }
     if (!_interstitialReady) {
       _preloadInterstitial();
       return false;
@@ -198,11 +218,13 @@ class AdService {
     _loadingInterstitial = true;
     _gateway
         .loadInterstitial(AdConfig.interstitialId)
-        .then((_) => _interstitialReady = true)
+        .then((_) {
+          _interstitialReady = true;
+          _interstitialLoadedAt = _now();
+        })
         .catchError((Object error, StackTrace stack) {
           _interstitialReady = false;
           _log(error, stack);
-          return false;
         })
         .whenComplete(() => _loadingInterstitial = false);
   }
