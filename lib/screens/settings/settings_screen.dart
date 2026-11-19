@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,6 +11,8 @@ import '../../core/app_prefs.dart';
 import '../../core/audio_service.dart';
 import '../../core/colorblind.dart';
 import '../../core/haptics.dart';
+import '../../core/local_reminders.dart';
+import '../../core/notification_service.dart';
 import '../../widgets/entrance.dart';
 import '../../widgets/info_dialog.dart';
 import '../../widgets/page_shell.dart';
@@ -34,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _music = true;
   bool _vibration = true;
   bool _colorblind = false;
+  bool _notifications = true;
 
   @override
   void initState() {
@@ -46,8 +51,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     final m = await AppPrefs.flag('music');
     final v = await AppPrefs.flag('vibration');
     final c = await AppPrefs.flag('colorblind', def: false);
+    final n = await AppPrefs.flag('notifications');
     if (!mounted) return;
     setState(() {
+      _notifications = n;
       _sound = s;
       _music = m;
       _vibration = v;
@@ -91,6 +98,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
     if (key == 'music') AudioService.instance.setMusic(v);
     if (key == 'colorblind') ColorblindMode.set(v);
+    if (key == 'notifications') {
+      unawaited(
+        NotificationService.instance
+            .setSwitch(v)
+            .whenComplete(() => LocalReminders.instance.refresh()),
+      );
+    }
   }
 
   @override
@@ -139,6 +153,14 @@ class _SettingsScreenState extends State<SettingsScreen>
               _colorblind,
               (v) => _set('colorblind', v, () => _colorblind = v),
               const [Color(0xFFFFF27A), Color(0xFFFFA000)],
+            ),
+            _toggle(
+              Icons.notifications_rounded,
+              'Notifications',
+              'Daily reward and event reminders',
+              _notifications,
+              (v) => _set('notifications', v, () => _notifications = v),
+              const [Color(0xFFFF9EC7), Color(0xFFE0457B)],
             ),
           ]),
           const SizedBox(height: 18),

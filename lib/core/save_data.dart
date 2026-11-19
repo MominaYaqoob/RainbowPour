@@ -49,6 +49,8 @@ class SaveData {
   bool music = true;
   bool vibration = true;
   bool colorblind = false;
+  bool notifications = true;
+  bool notifAsked = false;
 
   // ---- rewarded ads
   /// Local day (`yyyy-m-d`) the gem-ad counter belongs to, and the count.
@@ -105,6 +107,8 @@ class SaveData {
     'music': music,
     'vibration': vibration,
     'colorblind': colorblind,
+    'notifications': notifications,
+    'notif_asked': notifAsked,
     'adsDay': adsDay,
     'adsCount': adsCount,
     'daily': daily.toJson(),
@@ -153,6 +157,8 @@ class SaveData {
     s.music = _bool(json['music'], true);
     s.vibration = _bool(json['vibration'], true);
     s.colorblind = _bool(json['colorblind'], false);
+    s.notifications = _bool(json['notifications'], true);
+    s.notifAsked = _bool(json['notif_asked'], false);
     s.adsDay = json['adsDay'] is String ? json['adsDay'] as String : null;
     s.adsCount = _int(json['adsCount'], 0);
     final daily = json['daily'];

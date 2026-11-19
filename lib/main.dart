@@ -11,6 +11,7 @@ import 'core/app_prefs.dart';
 import 'core/audio_service.dart';
 import 'core/colorblind.dart';
 import 'core/haptics.dart';
+import 'core/notification_service.dart';
 import 'screens/splash/studio_splash.dart';
 import 'widgets/background_theme.dart';
 import 'widgets/bottle_shape.dart';
@@ -58,10 +59,13 @@ Future<void> main() async {
   };
   // Firebase starts in the background; it collects nothing until consent.
   unawaited(AnalyticsService.instance.init());
-  AdService.instance.adsReady.addListener(
-    () =>
-        AnalyticsService.instance.setConsent(AdService.instance.adsReady.value),
-  );
+  unawaited(NotificationService.instance.load().catchError((Object _) {}));
+  AdService.instance.adsReady.addListener(() {
+    final allowed = AdService.instance.adsReady.value;
+    AnalyticsService.instance.setConsent(allowed);
+    // Push messages follow the same consent as analytics.
+    unawaited(NotificationService.instance.setConsent(allowed));
+  });
   runApp(const RainbowPourApp());
   // Returning players already agreed. First launch waits for ConsentScreen.
   WidgetsBinding.instance.addPostFrameCallback((_) {

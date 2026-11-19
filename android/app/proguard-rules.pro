@@ -13,6 +13,10 @@
     <init>();
 }
 
+# flutter_local_notifications (daily reminders). The plugin stores scheduled
+# notifications as JSON and reads them back by class name after a reboot.
+-keep class com.dexterous.flutterlocalnotifications.** { *; }
+
 # audioplayers (sound effects and music). R8 full mode can rename or strip the
 # plugin's enums and player classes, which are looked up by name from Dart; the
 # game then plays no sound at all in release builds (it worked in debug).

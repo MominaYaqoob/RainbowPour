@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import '../../core/anim.dart';
 import '../../core/audio_service.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_prefs.dart';
+import '../../core/local_reminders.dart';
+import '../../core/notification_service.dart';
 import '../../widgets/avatar_face.dart';
 import '../../widgets/background_theme.dart';
 import '../../widgets/bottle_shape.dart';
@@ -71,6 +74,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _gems = gems;
       _level = level;
     });
+    // Daily reward / challenge reminders for the next days.
+    unawaited(LocalReminders.instance.refresh());
+    // One-time notification permission, after the player has played a bit.
+    unawaited(
+      NotificationService.instance
+          .maybeAskPermission(levelsDone: level - 1)
+          .catchError((Object _) => false),
+    );
   }
 
   @override

@@ -62,6 +62,8 @@ abstract final class AppPrefs {
       'music' => d.music,
       'vibration' => d.vibration,
       'colorblind' => d.colorblind,
+      'notifications' => d.notifications,
+      'notif_asked' => d.notifAsked,
       'tutorial' => d.tutorialDone,
       _ => def,
     };
@@ -77,6 +79,10 @@ abstract final class AppPrefs {
         d.vibration = v;
       case 'colorblind':
         d.colorblind = v;
+      case 'notifications':
+        d.notifications = v;
+      case 'notif_asked':
+        d.notifAsked = v;
       case 'tutorial':
         d.tutorialDone = v;
     }
